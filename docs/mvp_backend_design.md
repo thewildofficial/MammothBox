@@ -2,6 +2,27 @@
 
 **Goal.** Ship a single, deployable backend that accepts arbitrary JSON and media via a single endpoint, makes a deterministic storage decision (SQL vs JSONB), and clusters media into human-meaningful directories. Design for a hackathon: minimal infra, CPU-only inference, clear extension points.
 
+
+PROBLEM STATEMENT:
+
+Challenge: Design a smart storage system with a single frontend interface that intelligently processes and stores any type of data.
+Key Requirements:
+For Media Files (Images/Videos):
+Accept any media type through a unified frontend
+Automatically analyze and categorize content
+Place files with related existing media in appropriate directories
+Create new directories for unique content categories
+Organize subsequent related media into existing directories
+For Structured Data (JSON Objects):
+Accept JSON objects through the same frontend
+Intelligently determine whether SQL or NoSQL is more appropriate
+Create the appropriate database entity automatically
+For multiple JSON objects: analyze structure and generate complete schema with proper relationships
+Additional Considerations:
+System should accept optional comments/metadata to aid in schema generation
+Must handle both single and batch data inputs
+Should maintain consistency and optimize for query performance
+
 ---
 
 ## 0. Constraints & Guiding Principles

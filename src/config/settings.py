@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     max_image_size: int = 1024
     video_keyframes: int = 3
     
+    # VLM Configuration (Gemini)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"  # or gemini-1.5-flash
+    vlm_enabled: bool = True
+    vlm_timeout: int = 5  # seconds
+    vlm_fallback_to_clip: bool = True  # Use CLIP if VLM fails
+    
     # Schema Decision
     schema_sample_size: int = 128
     schema_stability_threshold: float = 0.6

@@ -25,6 +25,9 @@ torch==2.1.1
 onnxruntime==1.16.3
 clip-by-openai==1.0
 
+## Vision Language Model (VLM)
+google-generativeai==0.3.2  # Gemini API SDK
+
 ## Storage
 boto3==1.29.7  # For S3 backend
 
