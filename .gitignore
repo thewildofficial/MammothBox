@@ -22,6 +22,7 @@ wheels/
 
 # Virtual Environment
 venv/
+.venv/
 ENV/
 env/
 
@@ -69,10 +70,6 @@ temp/
 *.tmp
 
 
-# git ignore data and images in notebook folders
+# Git ignore data and images in notebook folders (except notebooks/images/* which contains test images)
 notebooks/data/
-notebooks/images/
-
-# videos too
-
 notebooks/videos/

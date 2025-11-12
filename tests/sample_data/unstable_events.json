@@ -1,0 +1,22 @@
+[
+  {
+    "event": "login",
+    "user_id": 1,
+    "timestamp": "2024-01-01T10:00:00Z"
+  },
+  {
+    "event": "purchase",
+    "order_id": 123,
+    "total": 99.99,
+    "currency": "USD"
+  },
+  {
+    "event": "logout",
+    "session_duration": 3600
+  },
+  {
+    "event": "signup",
+    "referrer": "google",
+    "campaign": "summer2024"
+  }
+]

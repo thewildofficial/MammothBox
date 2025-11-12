@@ -1,0 +1,30 @@
+[
+  {
+    "sensor_id": "temp_01",
+    "reading": 22.5,
+    "unit": "celsius",
+    "timestamp": "2024-01-01T10:00:00Z",
+    "location": "office"
+  },
+  {
+    "sensor_id": "temp_01",
+    "reading": 22.7,
+    "unit": "celsius",
+    "timestamp": "2024-01-01T10:05:00Z",
+    "location": "office"
+  },
+  {
+    "sensor_id": "humid_01",
+    "reading": 45.2,
+    "unit": "percent",
+    "timestamp": "2024-01-01T10:00:00Z",
+    "location": "warehouse"
+  },
+  {
+    "sensor_id": "humid_01",
+    "reading": 46.1,
+    "unit": "percent",
+    "timestamp": "2024-01-01T10:05:00Z",
+    "location": "warehouse"
+  }
+]

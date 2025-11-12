@@ -1,51 +1,51 @@
 # Python Dependencies
 
 ## Core Framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
 
 ## Database
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
-alembic==1.12.1
-pgvector==0.2.4
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.36
+alembic==1.14.0
+pgvector==0.3.6
 
 ## Media Processing
-Pillow==10.1.0
-opencv-python-headless==4.8.1.78
+Pillow==10.4.0
+opencv-python-headless==4.10.0.84
 imagehash==4.3.1
 ffmpeg-python==0.2.0
 
 ## ML/Embeddings (CPU-friendly)
-sentence-transformers==2.2.2
-transformers==4.35.2
-torch==2.1.1
-onnxruntime==1.16.3
-clip-by-openai==1.0
+sentence-transformers==3.3.1
+transformers==4.46.3
+torch==2.1.2
+onnxruntime==1.19.2
+open-clip-torch==2.29.0
 
 ## Vision Language Model (VLM)
-google-generativeai==0.3.2  # Gemini API SDK
+google-generativeai==0.8.3  # Gemini API SDK
 
 ## Storage
-boto3==1.29.7  # For S3 backend
+boto3==1.35.69  # For S3 backend
 
 ## Job Queue
-redis==5.0.1  # Optional, for Redis-backed queue
+redis==5.2.0  # Optional, for Redis-backed queue
 
 ## Utilities
-python-multipart==0.0.6
-python-dotenv==1.0.0
-httpx==0.25.2
+python-multipart==0.0.20
+python-dotenv==1.0.1
+httpx==0.28.1
 
 ## Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
 
 ## Development
-black==23.11.0
-flake8==6.1.0
-mypy==1.7.1
+black==24.10.0
+flake8==7.1.1
+mypy==1.13.0
 

@@ -1,0 +1,45 @@
+[
+  {
+    "product_id": 1,
+    "name": "Laptop",
+    "price": 999.99,
+    "category": "Electronics",
+    "in_stock": true,
+    "tags": [
+      "computer",
+      "portable"
+    ]
+  },
+  {
+    "product_id": 2,
+    "name": "Mouse",
+    "price": 29.99,
+    "category": "Electronics",
+    "in_stock": true,
+    "tags": [
+      "accessory",
+      "wireless"
+    ]
+  },
+  {
+    "product_id": 3,
+    "name": "Desk",
+    "price": 299.99,
+    "category": "Furniture",
+    "in_stock": false,
+    "tags": [
+      "office"
+    ]
+  },
+  {
+    "product_id": 4,
+    "name": "Chair",
+    "price": 199.99,
+    "category": "Furniture",
+    "in_stock": true,
+    "tags": [
+      "office",
+      "ergonomic"
+    ]
+  }
+]

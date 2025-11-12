@@ -35,8 +35,14 @@ async def liveness():
 @app.get("/ready")
 async def readiness():
     """Readiness check endpoint"""
-    # TODO: Check database connection
-    return {"status": "ready"}
+    from src.catalog.database import check_database_connection
+    
+    db_healthy = check_database_connection()
+    
+    return {
+        "status": "ready" if db_healthy else "not_ready",
+        "database": "connected" if db_healthy else "disconnected"
+    }
 
 if __name__ == "__main__":
     uvicorn.run(

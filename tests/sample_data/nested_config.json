@@ -1,0 +1,21 @@
+[
+  {
+    "app": "web",
+    "config": {
+      "database": {
+        "host": "localhost",
+        "port": 5432,
+        "credentials": {
+          "username": "admin",
+          "password": "secret"
+        }
+      },
+      "cache": {
+        "redis": {
+          "host": "cache.example.com",
+          "port": 6379
+        }
+      }
+    }
+  }
+]
