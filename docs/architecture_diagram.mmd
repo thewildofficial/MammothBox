@@ -1,0 +1,132 @@
+flowchart TB
+  subgraph Clients["📱 Client Layer"]
+    U["Client Applications<br/>(CLI tools, SDKs, Web UI)<br/><i>Users upload media files or JSON documents</i>"]
+  end
+
+  subgraph Ingress["🚪 Ingress Layer - Request Entry Point"]
+    A["HTTP API Gateway<br/><i>POST /api/v1/ingest endpoint<br/>Accepts multipart/form-data or JSON<br/>Returns 202 Accepted with job_id</i>"]
+    V["Request Validator<br/><i>Validates payload size, MIME types<br/>Checks idempotency keys<br/>Extracts metadata (owner, comments)</i>"]
+  end
+
+  subgraph Storage["💾 Object Storage Layer (Local Filesystem)"]
+    Sraw[("Raw Incoming Storage<br/>incoming/request_id/part_id<br/><i>Temporary holding area for<br/>unprocessed uploads</i>")]
+    Scanon[("Canonical Media Storage<br/>media/clusters/cluster_id/asset_id<br/><i>Final organized location<br/>grouped by similarity clusters</i>")]
+    Sder[("Derived Assets Storage<br/>media/derived/cluster_id/asset_id/<br/><i>Thumbnails, transcoded videos,<br/>processed derivatives</i>")]
+  end
+
+  subgraph Metadata["🗄️ PostgreSQL Database + pgvector Extension"]
+    Arw[("asset_raw Table<br/><i>Immutable record of every<br/>raw upload with URI pointer</i>")]
+    Ast[("asset Table<br/><i>Canonical metadata: embeddings,<br/>tags, cluster_id, schema_id,<br/>status, content_type</i>")]
+    Clu[("cluster Table<br/><i>Media clusters: centroid vectors,<br/>thresholds, provisional flags,<br/>human-readable names</i>")]
+    Sch[("schema_def Table<br/><i>JSON schema proposals:<br/>structure_hash, storage_choice<br/>(SQL vs JSONB), DDL, status</i>")]
+    Lin[("lineage Table<br/><i>Audit trail: request_id, asset_id,<br/>processing stages, timestamps,<br/>error details</i>")]
+    Vid[("video_frame Table<br/><i>Per-frame embeddings for videos<br/>enabling frame-level search</i>")]
+  end
+
+  subgraph Queueing["⚙️ Job Orchestration - Async Processing"]
+    JQ[["Job Queue<br/>(In-process or Redis)<br/><i>Holds pending processing jobs<br/>with asset_id, content_type, metadata</i>"]]
+    DLQ[["Dead-Letter Queue<br/><i>Failed jobs after retries<br/>require operator intervention</i>"]]
+  end
+
+  subgraph Workers["👷 Worker Runtime - Background Processing"]
+    W["Worker Supervisor<br/><i>Polls queue, spawns workers,<br/>manages concurrency limits</i>"]
+    subgraph MediaFlow["🎬 Media Processing Pipeline"]
+      MP["Media Processor<br/><i>Orchestrates: normalization,<br/>thumbnail generation,<br/>EXIF extraction</i>"]
+      EMB["CLIP Embedding Engine<br/>(CPU/ONNX Runtime)<br/><i>Converts images/video frames<br/>to 512-d vectors for similarity</i>"]
+      TAG["Zero-shot Tagger<br/><i>Uses CLIP text encoder to<br/>generate descriptive tags<br/>(e.g., 'dog', 'sunset')</i>"]
+      CLUASSIGN["Cluster Assignment Strategy<br/><i>ANN search in pgvector to find<br/>nearest cluster centroid<br/>Creates new cluster if threshold exceeded</i>"]
+    end
+    subgraph JsonFlow["📄 JSON Processing Pipeline"]
+      JP["JSON Normalizer<br/><i>Flattens nested structures,<br/>detects data types, computes<br/>field presence statistics</i>"]
+      SD["SchemaDecider Algorithm<br/><i>Analyzes structure stability,<br/>chooses SQL vs JSONB storage,<br/>generates provisional DDL</i>"]
+      SQLP["SQL Materializer<br/><i>Creates normalized tables,<br/>applies migrations, maps<br/>JSON fields to columns</i>"]
+      JSONBP["JSONB Upserter<br/><i>Stores documents in<br/>docs_collection tables<br/>with GIN indexes</i>"]
+    end
+  end
+
+  subgraph Admin["👨‍💼 Admin & Human Feedback Loop"]
+    UI["Admin UI Dashboard<br/><i>Review schema proposals,<br/>accept/reject migrations,<br/>inspect cluster assignments</i>"]
+    FB["Manual Override Service<br/><i>Allows admins to merge clusters,<br/>rename directories, adjust<br/>schema decisions</i>"]
+  end
+
+  subgraph Observability["📊 Observability & Monitoring"]
+    LOG["Structured JSON Logs<br/><i>Request_id correlation,<br/>stage-level events, errors</i>"]
+    MET["Metrics Export<br/>(Prometheus format)<br/><i>Ingest latency, queue depth,<br/>processing time, cluster counts</i>"]
+    TRC["Distributed Tracing<br/><i>End-to-end request flow<br/>across all components</i>"]
+    ALR["Alerting Rules<br/><i>DLQ growth, latency spikes,<br/>processing failures</i>"]
+  end
+
+  %% Client to Ingress
+  U -->|"1. Upload Request<br/>(multipart/json payload<br/>+ optional metadata)"| A
+  A -->|"2. Validate & Extract<br/>(size limits, MIME check,<br/>idempotency validation)"| V
+
+  %% Ingress to Storage & Database
+  V -->|"3a. Persist Raw Bytes<br/>(always keep original<br/>for audit/replay)"| Sraw
+  V -->|"3b. Create Raw Record<br/>(insert into asset_raw<br/>with URI pointer)"| Arw
+  V -->|"3c. Enqueue Processing Job<br/>(async, non-blocking<br/>returns job_id immediately)"| JQ
+  V -->|"3d. Log Ingest Event<br/>(audit trail start)"| Lin
+  V -->|"4. Return 202 Accepted<br/>(job_id, system_ids)"| U
+
+  %% Queue to Workers
+  JQ -->|"5. Dequeue Job<br/>(worker picks next<br/>pending item)"| W
+  W -->|"6a. Route Media Files<br/>(images, videos, audio)"| MP
+  W -->|"6b. Route JSON Documents<br/>(structured data objects)"| JP
+  W -->|"7. Failed Jobs<br/>(after max retries)"| DLQ
+  DLQ -->|"8. Manual Replay<br/>(operator fixes issue<br/>and retries)"| W
+
+  %% Media Processing Flow
+  MP -->|"9a. Extract & Normalize<br/>(resize images, extract<br/>keyframes from video)"| EMB
+  EMB -->|"9b. Store Embedding Vector<br/>(512-d CLIP vector<br/>in asset.embedding)"| Ast
+  EMB -->|"9c. Find Nearest Cluster<br/>(ANN search via pgvector<br/>cosine similarity)"| CLUASSIGN
+  CLUASSIGN -->|"9d. Update Cluster Metadata<br/>(assign asset_id or<br/>create new cluster)"| Clu
+  CLUASSIGN -->|"9e. Move File to Final Location<br/>(from incoming/ to<br/>clusters/cluster_id/)"| Scanon
+  MP -->|"9f. Generate Tags<br/>(zero-shot classification<br/>using CLIP text encoder)"| TAG
+  TAG -->|"9g. Store Tags Array<br/>(descriptive labels<br/>in asset.tags)"| Ast
+  MP -->|"9h. Generate Thumbnails<br/>(small preview images)"| Sder
+  MP -->|"9i. Log Processing Complete<br/>(update lineage with<br/>final status)"| Lin
+
+  %% JSON Processing Flow
+  JP -->|"10a. Analyze Structure<br/>(flatten paths, compute<br/>field stability metrics)"| SD
+  SD -->|"10b. Create Schema Proposal<br/>(structure_hash, storage_choice,<br/>DDL candidate, status=provisional)"| Sch
+  SD -->|"10c. Notify Admin<br/>(new proposal requires<br/>human review)"| UI
+  UI -->|"10d. Accept/Reject Decision<br/>(admin approves migration<br/>or rejects proposal)"| Sch
+  Sch -->|"10e. Update Schema Status<br/>(provisional → active<br/>or rejected)"| Lin
+  SD -->|"10f. If SQL Chosen<br/>(structured, stable schema)"| SQLP
+  SQLP -->|"10g. Execute DDL Migration<br/>(create tables, indexes,<br/>only if status=active)"| Sch
+  SQLP -->|"10h. Insert into SQL Tables<br/>(normalized columns,<br/>foreign keys)"| Ast
+  SD -->|"10i. If JSONB Chosen<br/>(flexible, nested documents)"| JSONBP
+  JSONBP -->|"10j. Upsert into Collection<br/>(docs_collection table<br/>with JSONB column)"| Ast
+
+  %% Search & Query Flow
+  A -->|"11a. Semantic Search Query<br/>(text: 'dog' or 'monkey with hat')"| Ast
+  Ast -->|"11b. ANN Search Results<br/>(CLIP text encoder → vector,<br/>cosine similarity in pgvector)"| A
+  A -->|"11c. Job Status Poll<br/>(GET /ingest/job_id/status)"| Lin
+  Lin -->|"11d. Return Progress<br/>(queued/processing/done/failed)"| A
+  A -->|"11e. Catalog Lookup<br/>(GET /objects/system_id)"| Ast
+  Ast -->|"11f. Return Metadata<br/>(cluster info, schema_id,<br/>storage URIs, tags)"| A
+
+  %% Admin Feedback Loop
+  FB -->|"12a. Override Cluster Assignment<br/>(merge clusters, rename,<br/>adjust thresholds)"| CLUASSIGN
+  FB -->|"12b. Override Schema Decision<br/>(force SQL/JSONB choice,<br/>modify DDL)"| SD
+
+  %% Observability
+  W -->|"13a. Emit Logs<br/>(structured JSON with<br/>request_id correlation)"| LOG
+  W -->|"13b. Export Metrics<br/>(counters, histograms,<br/>gauges)"| MET
+  W -->|"13c. Record Traces<br/>(span per component,<br/>timing data)"| TRC
+  DLQ -->|"13d. Alert on Failures<br/>(DLQ depth exceeds<br/>threshold)"| ALR
+  MET -->|"13e. Alert on Anomalies<br/>(latency spikes,<br/>error rate increases)"| ALR
+
+  %% Styling
+  classDef storageClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+  classDef dbClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+  classDef processClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+  classDef adminClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+  classDef obsClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+
+  class Sraw,Scanon,Sder storageClass
+  class Arw,Ast,Clu,Sch,Lin,Vid dbClass
+  class MP,EMB,TAG,CLUASSIGN,JP,SD,SQLP,JSONBP,W processClass
+  class UI,FB adminClass
+  class LOG,MET,TRC,ALR obsClass
+
+
