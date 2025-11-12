@@ -37,11 +37,11 @@ env/
 .env
 .env.local
 
-# Storage
-storage/
-media/
-derived/
-json/
+# Storage (data directories, not source code)
+/storage/
+/media/
+/derived/
+/json/
 
 # Logs
 *.log
