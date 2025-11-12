@@ -184,9 +184,24 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE video_frame ALTER COLUMN embedding TYPE vector(512) USING embedding::vector")
 
+    # Create HNSW indexes for efficient vector similarity search
+    # HNSW (Hierarchical Navigable Small World) provides fast approximate nearest neighbor search
+    # vector_cosine_ops: Use cosine distance for similarity (1 - cosine_similarity)
+    op.execute(
+        "CREATE INDEX idx_cluster_centroid_hnsw ON cluster USING hnsw (centroid vector_cosine_ops)")
+    op.execute(
+        "CREATE INDEX idx_asset_embedding_hnsw ON asset USING hnsw (embedding vector_cosine_ops)")
+    op.execute(
+        "CREATE INDEX idx_video_frame_embedding_hnsw ON video_frame USING hnsw (embedding vector_cosine_ops)")
+
 
 def downgrade() -> None:
     """Drop all tables and extensions."""
+
+    # Drop HNSW indexes first
+    op.execute('DROP INDEX IF EXISTS idx_video_frame_embedding_hnsw')
+    op.execute('DROP INDEX IF EXISTS idx_asset_embedding_hnsw')
+    op.execute('DROP INDEX IF EXISTS idx_cluster_centroid_hnsw')
 
     # Drop tables in reverse order (respecting foreign keys)
     op.drop_table('video_frame')
