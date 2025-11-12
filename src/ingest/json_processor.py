@@ -198,7 +198,16 @@ class JsonProcessor:
         )
 
         self.db.add(schema_def)
-        self.db.commit()
+        try:
+            self.db.flush()
+            # If auto-migrate is enabled and schema is active, execute DDL before commit
+            if schema_def.status == "active":
+                self._execute_ddl(schema_def)
+            self.db.commit()
+        except Exception as err:
+            self.db.rollback()
+            raise JsonProcessingError(
+                f"Failed to persist schema '{collection_name}': {err}") from err
 
         self._log_lineage(
             request_id=request_id,
@@ -211,10 +220,6 @@ class JsonProcessor:
             },
             success=True
         )
-
-        # If auto-migrate is enabled and schema is active, execute DDL
-        if schema_def.status == "active":
-            self._execute_ddl(schema_def)
 
         return schema_def
 
@@ -233,9 +238,8 @@ class JsonProcessor:
             # Replace placeholder with actual table name
             ddl = schema_def.ddl.replace("{table_name}", schema_def.name)
             self.db.execute(text(ddl))
-            self.db.commit()
-        except Exception as e:
-            raise JsonProcessingError(f"Failed to execute DDL: {e}")
+        except Exception as err:
+            raise JsonProcessingError(f"Failed to execute DDL: {err}") from err
 
     def _process_sql_documents(
         self,

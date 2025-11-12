@@ -36,7 +36,7 @@ class SchemaResponse(BaseModel):
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest(
+def ingest(
     files: Optional[List[UploadFile]] = File(None),
     payload: Optional[str] = Form(None),
     owner: Optional[str] = Form(None),
@@ -156,7 +156,7 @@ async def search(
 
 
 @router.get("/schemas", response_model=List[SchemaResponse])
-async def list_schemas(
+def list_schemas(
     status: Optional[str] = Query(
         None, description="Filter by status: provisional, active, rejected"),
     db: Session = Depends(get_db)
@@ -190,7 +190,7 @@ async def list_schemas(
 
 
 @router.get("/schemas/{schema_id}", response_model=SchemaResponse)
-async def get_schema(schema_id: str, db: Session = Depends(get_db)):
+def get_schema(schema_id: str, db: Session = Depends(get_db)):
     """Get details of a specific schema."""
     from uuid import UUID
 
@@ -216,7 +216,7 @@ async def get_schema(schema_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/schemas/{schema_id}/approve")
-async def approve_schema(
+def approve_schema(
     schema_id: str,
     reviewed_by: str = Form(..., description="Identifier of the reviewer"),
     db: Session = Depends(get_db)
@@ -255,7 +255,7 @@ async def approve_schema(
 
 
 @router.post("/schemas/{schema_id}/reject")
-async def reject_schema(
+def reject_schema(
     schema_id: str,
     reviewed_by: str = Form(..., description="Identifier of the reviewer"),
     reason: str = Form(..., description="Reason for rejection"),

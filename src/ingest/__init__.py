@@ -20,7 +20,7 @@ from src.ingest.schema_decider import (
 from src.ingest.ddl_generator import DDLGenerator
 from src.ingest.json_processor import JsonProcessor, JsonProcessingError
 
-__all__ = [
+__all__ = [  # ruff: noqa: RUF022
     # Schema Analysis
     "JsonSchemaAnalyzer",
     "JsonType",

@@ -5,16 +5,17 @@ Database migration script using Alembic.
 Runs all pending database migrations to upgrade the schema.
 """
 
-from src.config.settings import get_settings
-from alembic import command
-from alembic.config import Config
 import sys
-import os
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# Add project root to path before importing project modules
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from src.config.settings import get_settings  # noqa: E402
 
 
 def run_migrations():

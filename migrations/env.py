@@ -5,19 +5,21 @@ This module configures Alembic to work with our SQLAlchemy models
 and PostgreSQL database.
 """
 
-from src.catalog.models import Base
-from src.config.settings import get_settings
-from logging.config import fileConfig
 import sys
 from pathlib import Path
+from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
+# Add project root to path before importing project modules
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+from sqlalchemy import engine_from_config  # noqa: E402
+from sqlalchemy import pool  # noqa: E402
+from alembic import context  # noqa: E402
+
+from src.catalog.models import Base  # noqa: E402
+from src.config.settings import get_settings  # noqa: E402
 
 
 # this is the Alembic Config object

@@ -32,6 +32,16 @@ def upgrade() -> None:
     op.execute(
         "CREATE TYPE schema_status AS ENUM ('provisional', 'active', 'rejected')")
 
+    # Define ENUM types for reuse (create_type=False since we created them above)
+    asset_kind_enum = postgresql.ENUM(
+        'media', 'json', name='asset_kind', create_type=False)
+    asset_status_enum = postgresql.ENUM(
+        'queued', 'processing', 'done', 'failed', name='asset_status', create_type=False)
+    storage_choice_enum = postgresql.ENUM(
+        'sql', 'jsonb', name='storage_choice', create_type=False)
+    schema_status_enum = postgresql.ENUM(
+        'provisional', 'active', 'rejected', name='schema_status', create_type=False)
+
     # Create asset_raw table
     op.create_table(
         'asset_raw',
@@ -72,11 +82,10 @@ def upgrade() -> None:
         sa.Column('name', sa.String(255), nullable=False),
         sa.Column('structure_hash', sa.String(64),
                   nullable=False, unique=True, index=True),
-        sa.Column('storage_choice', postgresql.ENUM(
-            'sql', 'jsonb', name='storage_choice'), nullable=False),
+        sa.Column('storage_choice', storage_choice_enum, nullable=False),
         sa.Column('version', sa.Integer(), nullable=False, server_default='1'),
         sa.Column('ddl', sa.Text(), nullable=True),
-        sa.Column('status', postgresql.ENUM('provisional', 'active', 'rejected', name='schema_status'),
+        sa.Column('status', schema_status_enum,
                   nullable=False, server_default='provisional', index=True),
         sa.Column('sample_size', sa.Integer(), nullable=True),
         sa.Column('field_stability', sa.Float(), nullable=True),
@@ -98,8 +107,7 @@ def upgrade() -> None:
     op.create_table(
         'asset',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('kind', postgresql.ENUM('media', 'json',
-                  name='asset_kind'), nullable=False, index=True),
+        sa.Column('kind', asset_kind_enum, nullable=False, index=True),
         sa.Column('uri', sa.Text(), nullable=False),
         sa.Column('sha256', sa.String(64), nullable=True, index=True),
         sa.Column('content_type', sa.String(255), nullable=True),
@@ -109,7 +117,7 @@ def upgrade() -> None:
                   server_default=sa.text('NOW()')),
         sa.Column('updated_at', sa.DateTime(), nullable=False,
                   server_default=sa.text('NOW()')),
-        sa.Column('status', postgresql.ENUM('queued', 'processing', 'done', 'failed', name='asset_status'),
+        sa.Column('status', asset_status_enum,
                   nullable=False, server_default='queued', index=True),
         sa.Column('cluster_id', postgresql.UUID(as_uuid=True),
                   sa.ForeignKey('cluster.id'), nullable=True, index=True),

@@ -5,15 +5,16 @@ Sample data generator and validation script.
 Generates various JSON datasets to test the entire JSON processing pipeline.
 """
 
-from src.ingest.schema_decider import SchemaDecider, StorageChoice
-from src.ingest.schema_analyzer import JsonSchemaAnalyzer
 import json
 import sys
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# Add project root to path before importing project modules
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.ingest.schema_decider import SchemaDecider, StorageChoice  # noqa: E402
 
 
 # Sample datasets with different characteristics
@@ -145,7 +146,7 @@ def analyze_dataset(name: str, dataset: dict):
     # Print decision
     print(f"\nStorage Choice: {decision.storage_choice.value.upper()}")
     print(f"Confidence: {decision.confidence:.1%}")
-    print(f"\nAnalysis:")
+    print("\nAnalysis:")
     print(f"  • Documents Analyzed: {decision.documents_analyzed}")
     print(f"  • Top-Level Keys: {decision.top_level_keys}")
     print(f"  • Maximum Depth: {decision.max_depth}")
@@ -155,7 +156,7 @@ def analyze_dataset(name: str, dataset: dict):
     print(f"\nRationale:\n{decision.reason}")
 
     # Show field details
-    print(f"\nField Details:")
+    print("\nField Details:")
     # Show first 10
     for field_path, field_info in sorted(decision.fields.items())[:10]:
         presence = field_info['presence']
@@ -205,7 +206,7 @@ def main():
     print(f"SQL Storage: {sql_count}")
     print(f"JSONB Storage: {jsonb_count}")
 
-    print(f"\nDetailed Results:")
+    print("\nDetailed Results:")
     for name, choice in results.items():
         emoji = "📊" if choice == StorageChoice.SQL else "📝"
         print(f"  {emoji} {name}: {choice.value.upper()}")
@@ -216,7 +217,7 @@ def main():
     print("=" * 70)
     generate_sample_files()
 
-    print(f"\n✅ Analysis complete!")
+    print("\n✅ Analysis complete!")
 
 
 if __name__ == "__main__":

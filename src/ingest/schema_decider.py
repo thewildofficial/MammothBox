@@ -251,16 +251,20 @@ class SchemaDecider:
         Returns:
             Suggested collection name
         """
+        # Generate hash-based fallback name
+        hash_prefix = decision.structure_hash[:8]
+
         if hint:
             # Sanitize hint
             name = hint.lower().replace(" ", "_").replace("-", "_")
             # Remove non-alphanumeric characters except underscore
             name = "".join(c for c in name if c.isalnum() or c == "_")
-            return name
+            # Ensure name is valid: non-empty and starts with letter or underscore
+            if name and (name[0].isalpha() or name[0] == "_"):
+                return name
+            # If sanitization produced invalid name, fall through to hash-based name
 
         # Generate from structure hash (shortened)
-        hash_prefix = decision.structure_hash[:8]
-
         if decision.storage_choice == StorageChoice.SQL:
             return f"table_{hash_prefix}"
         else:
