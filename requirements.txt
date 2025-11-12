@@ -21,7 +21,7 @@ ffmpeg-python==0.2.0
 ## ML/Embeddings (CPU-friendly)
 sentence-transformers==3.3.1
 transformers==4.53.0
-torch==2.6.0
+torch==2.8.0
 onnxruntime==1.19.2
 open-clip-torch==2.29.0
 
