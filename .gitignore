@@ -68,3 +68,7 @@ tmp/
 temp/
 *.tmp
 
+
+# git ignore data and images in notebook folders
+notebooks/data/
+notebooks/images/
