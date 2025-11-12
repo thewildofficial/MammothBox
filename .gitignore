@@ -72,3 +72,7 @@ temp/
 # git ignore data and images in notebook folders
 notebooks/data/
 notebooks/images/
+
+# videos too
+
+notebooks/videos/
