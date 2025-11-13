@@ -14,6 +14,7 @@ from io import BytesIO
 
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from src.catalog.models import AssetRaw, Asset, Job, Lineage
 from src.ingest.validator import IngestValidator, FileValidationResult, JsonValidationResult
@@ -102,13 +103,45 @@ class IngestionOrchestrator:
         validation_results = self.validator.validate_request(files=files, payload=payload)
         
         if not validation_results["valid"]:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Validation failed",
-                    "details": validation_results["errors"]
-                }
+            # Check if any errors are size limit violations
+            has_size_limit_error = any(
+                isinstance(err, dict) and err.get("error_type") == "size_limit"
+                for err in validation_results["errors"]
             )
+            
+            if has_size_limit_error:
+                # Build detailed error message for size limit violations
+                size_errors = [
+                    err for err in validation_results["errors"]
+                    if isinstance(err, dict) and err.get("error_type") == "size_limit"
+                ]
+                error_details = []
+                for err in size_errors:
+                    detail_msg = err.get("message", "")
+                    if err.get("max_size") is not None:
+                        detail_msg += f" (limit: {err['max_size']} bytes, actual: {err.get('size_bytes', 'unknown')} bytes)"
+                    error_details.append(detail_msg)
+                
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "error": "Payload too large",
+                        "message": "Request exceeds size limits",
+                        "details": error_details
+                    }
+                )
+            else:
+                # All other validation failures return 400
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Validation failed",
+                        "details": [
+                            err.get("message", err) if isinstance(err, dict) else err
+                            for err in validation_results["errors"]
+                        ]
+                    }
+                )
         
         # Process files and JSON
         asset_ids = []
@@ -189,7 +222,37 @@ class IngestionOrchestrator:
         )
         
         self.db.add(job)
-        self.db.flush()
+        
+        try:
+            self.db.flush()
+        except IntegrityError as e:
+            # Handle race condition: another request with same request_id created job
+            self.db.rollback()
+            
+            # Re-query the existing job
+            existing_job = self.db.query(Job).filter(
+                Job.request_id == request_id
+            ).first()
+            
+            if existing_job:
+                # Return existing job info (idempotency)
+                existing_assets = self.db.query(Asset).filter(
+                    Asset.id.in_(existing_job.asset_ids or [])
+                ).all()
+                return {
+                    "job_id": str(existing_job.id),
+                    "system_ids": [str(a.id) for a in existing_assets],
+                    "status": "accepted",
+                    "request_id": request_id,
+                    "created_at": existing_job.created_at.isoformat(),
+                    "message": "Duplicate request (idempotency key)"
+                }
+            else:
+                # Unexpected integrity error
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database integrity error: {str(e)}"
+                )
         
         # Log lineage for job creation
         self._log_lineage(

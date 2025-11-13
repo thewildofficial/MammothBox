@@ -307,7 +307,7 @@ class Job(Base):
     id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[str] = mapped_column(
-        String(255), nullable=False, index=True)
+        String(255), nullable=False, unique=True, index=True)
     
     # Job metadata
     job_type: Mapped[str] = mapped_column(
@@ -356,7 +356,7 @@ class Job(Base):
         CheckConstraint("job_type IN ('media', 'json')", name='job_type_check'),
         CheckConstraint(
             "status IN ('queued', 'processing', 'done', 'failed')", name='job_status_check'),
-        Index('idx_job_request_id', 'request_id'),
+        # Note: request_id unique constraint creates index automatically, so idx_job_request_id is redundant
         Index('idx_job_status', 'status'),
         Index('idx_job_type', 'job_type'),
         Index('idx_job_dead_letter', 'dead_letter'),

@@ -38,6 +38,7 @@ class ValidationResult:
     content_type: Optional[str] = None
     size_bytes: int = 0
     error: Optional[str] = None
+    error_type: Optional[str] = None  # e.g., "size_limit", "format_error", etc.
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -127,7 +128,8 @@ class IngestValidator:
                     kind=kind,
                     content_type=content_type,
                     size_bytes=size_bytes,
-                    error=f"File size {size_bytes} exceeds maximum {max_size} bytes for {kind.value}"
+                    error=f"File size {size_bytes} exceeds maximum {max_size} bytes for {kind.value}",
+                    error_type="size_limit"
                 )
             
             # Compute SHA256 hash
@@ -172,7 +174,8 @@ class IngestValidator:
                     valid=False,
                     kind=AssetKind.JSON,
                     size_bytes=size_bytes,
-                    error=f"JSON payload size {size_bytes} exceeds maximum {MAX_JSON_SIZE} bytes"
+                    error=f"JSON payload size {size_bytes} exceeds maximum {MAX_JSON_SIZE} bytes",
+                    error_type="size_limit"
                 )
             
             # Parse JSON
@@ -268,7 +271,13 @@ class IngestValidator:
                 results["files"].append(file_result)
                 if not file_result.valid:
                     results["valid"] = False
-                    results["errors"].append(f"File {file.filename}: {file_result.error}")
+                    error_info = {
+                        "message": f"File {file.filename}: {file_result.error}",
+                        "error_type": file_result.error_type,
+                        "size_bytes": file_result.size_bytes,
+                        "max_size": self._get_max_size_for_kind(file_result.kind, file_result.content_type) if file_result.error_type == "size_limit" else None
+                    }
+                    results["errors"].append(error_info)
         
         # Validate JSON payload
         if payload:
@@ -276,7 +285,13 @@ class IngestValidator:
             results["json"] = json_result
             if not json_result.valid:
                 results["valid"] = False
-                results["errors"].append(f"JSON payload: {json_result.error}")
+                error_info = {
+                    "message": f"JSON payload: {json_result.error}",
+                    "error_type": json_result.error_type,
+                    "size_bytes": json_result.size_bytes,
+                    "max_size": MAX_JSON_SIZE if json_result.error_type == "size_limit" else None
+                }
+                results["errors"].append(error_info)
         
         return results
     
