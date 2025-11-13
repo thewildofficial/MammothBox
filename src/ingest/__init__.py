@@ -19,6 +19,19 @@ from src.ingest.schema_decider import (
 )
 from src.ingest.ddl_generator import DDLGenerator
 from src.ingest.json_processor import JsonProcessor, JsonProcessingError
+from src.ingest.validator import (
+    IngestValidator,
+    ValidationResult,
+    FileValidationResult,
+    JsonValidationResult,
+    AssetKind,
+    MAX_IMAGE_SIZE,
+    MAX_VIDEO_SIZE,
+    MAX_AUDIO_SIZE,
+    MAX_JSON_SIZE,
+    MAX_DOCUMENT_SIZE,
+)
+from src.ingest.orchestrator import IngestionOrchestrator, OrchestrationError
 
 __all__ = [  # ruff: noqa: RUF022
     # Schema Analysis
@@ -36,4 +49,18 @@ __all__ = [  # ruff: noqa: RUF022
     # Processing
     "JsonProcessor",
     "JsonProcessingError",
+    # Validation
+    "IngestValidator",
+    "ValidationResult",
+    "FileValidationResult",
+    "JsonValidationResult",
+    "AssetKind",
+    "MAX_IMAGE_SIZE",
+    "MAX_VIDEO_SIZE",
+    "MAX_AUDIO_SIZE",
+    "MAX_JSON_SIZE",
+    "MAX_DOCUMENT_SIZE",
+    # Orchestration
+    "IngestionOrchestrator",
+    "OrchestrationError",
 ]

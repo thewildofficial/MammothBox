@@ -3,16 +3,14 @@
 import json
 from uuid import uuid4, UUID
 from datetime import datetime
-from fastapi import APIRouter, UploadFile, File, Form, Query, Depends, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Form, Query, Depends, HTTPException, status, Request
 from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.catalog.database import get_db
-from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Lineage
-from src.queue.manager import get_queue_backend
-from src.queue.interface import QueueMessage
-from src.storage.factory import get_storage_adapter
+from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Cluster
+from src.ingest.orchestrator import IngestionOrchestrator
 from src.ingest.json_processor import JsonProcessor, JsonProcessingError
 
 router = APIRouter()
@@ -52,201 +50,39 @@ def ingest(
     """
     Unified ingestion endpoint for media files and JSON documents.
 
-    - **files**: Media files (images, videos, audio)
+    - **files**: Media files (images, videos, audio) or any file type
     - **payload**: JSON object or array (as JSON string)
     - **owner**: Optional owner identifier
     - **comments**: Optional metadata/comments (used as hint for schema generation)
     - **idempotency_key**: Optional idempotency key for deduplication
-    - **collection_name**: Optional hint for collection/table name
+    - **collection_name**: Optional hint for collection/table name (deprecated, use comments)
 
     Returns 202 Accepted immediately with job_id for async processing.
+    
+    Supports:
+    - Single or batch media files
+    - Single or batch JSON documents
+    - Mixed media and JSON in same request
     """
-    request_id = idempotency_key or str(uuid4())
-    job_id = uuid4()
-
-    # Validate that either files or payload is provided
-    if not files and not payload:
-        raise HTTPException(
-            status_code=400,
-            detail="Either 'files' or 'payload' must be provided"
-        )
-
     try:
-        storage = get_storage_adapter()
-        queue_backend = get_queue_backend()
-        system_ids = []
-        
-        # Handle media files
-        if files:
-            asset_raw_ids = []
-            asset_ids = []
-            
-            for idx, file in enumerate(files):
-                # Read file content
-                file_content = file.file.read()
-                file.file.seek(0)  # Reset for storage
-                
-                # Store raw file
-                part_id = f"part_{idx}"
-                raw_uri = storage.store_raw(request_id, part_id, file.file, file.filename or f"file_{idx}")
-                
-                # Create AssetRaw record
-                asset_raw = AssetRaw(
-                    request_id=request_id,
-                    part_id=part_id,
-                    uri=raw_uri,
-                    size_bytes=len(file_content),
-                    content_type=file.content_type
-                )
-                db.add(asset_raw)
-                db.flush()
-                asset_raw_ids.append(asset_raw.id)
-                
-                # Create Asset record (will be updated during processing)
-                asset = Asset(
-                    kind="media",
-                    uri=raw_uri,
-                    size_bytes=len(file_content),
-                    content_type=file.content_type,
-                    owner=owner,
-                    status="queued",
-                    raw_asset_id=asset_raw.id
-                )
-                db.add(asset)
-                db.flush()
-                asset_ids.append(asset.id)
-                system_ids.append(str(asset.id))
-            
-            # Create job record for media processing
-            job = Job(
-                id=job_id,
-                request_id=request_id,
-                job_type="media",
-                status="queued",
-                job_data={
-                    "job_id": str(job_id),
-                    "request_id": request_id,
-                    "asset_ids": [str(aid) for aid in asset_ids],
-                    "asset_raw_ids": [str(aid) for aid in asset_raw_ids],
-                    "owner": owner,
-                    "comments": comments
-                },
-                asset_ids=asset_ids
-            )
-            db.add(job)
-            db.flush()
-            
-            # Log lineage
-            for asset_id in asset_ids:
-                lineage = Lineage(
-                    request_id=request_id,
-                    asset_id=asset_id,
-                    stage="ingest",
-                    detail={"files_count": len(files)},
-                    success=True
-                )
-                db.add(lineage)
-            
-            # Build queue message
-            queue_message = QueueMessage(
-                job_id=job_id,
-                job_type="media",
-                job_data=job.job_data,
-                priority=0,
-                retry_count=0,
-                max_retries=3,
-                created_at=datetime.utcnow()
-            )
-            
-            # Enqueue and commit
-            try:
-                queue_backend.enqueue(queue_message)
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to enqueue job: {str(e)}"
-                )
-            
-            return IngestResponse(
-                job_id=str(job_id),
-                system_ids=system_ids,
-                status="accepted",
-                message=f"Job queued for processing {len(files)} media file(s)"
-            )
-        
-        # Handle JSON payload
-        elif payload:
-            # Parse JSON payload
-            parsed_payload = json.loads(payload)
-
-            # Ensure payload is a list
-            if isinstance(parsed_payload, dict):
-                documents = [parsed_payload]
-            elif isinstance(parsed_payload, list):
-                documents = parsed_payload
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Payload must be a JSON object or array"
-                )
-
-            # Create job record (assets will be created during processing)
-            job = Job(
-                id=job_id,
-                request_id=request_id,
-                job_type="json",
-                status="queued",
-                job_data={
-                    "job_id": str(job_id),  # Include for processor to update asset_ids
-                    "documents": documents,
-                    "request_id": request_id,
-                    "owner": owner,
-                    "collection_name_hint": collection_name or comments
-                },
-                asset_ids=None  # Will be updated after processing
-            )
-            db.add(job)
-            # Flush to get the job ID but don't commit yet
-            db.flush()
-            
-            # Build queue message from in-memory job data
-            queue_message = QueueMessage(
-                job_id=job_id,
-                job_type="json",
-                job_data=job.job_data,
-                priority=0,
-                retry_count=0,
-                max_retries=3,
-                created_at=datetime.utcnow()
-            )
-            
-            # Enqueue job before committing to avoid orphan jobs if enqueue fails
-            # If enqueue fails, the transaction will rollback
-            try:
-                queue_backend.enqueue(queue_message)
-                # Only commit after successful enqueue
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to enqueue job: {str(e)}"
-                )
-
-            return IngestResponse(
-                job_id=str(job_id),
-                system_ids=[],  # Will be populated after processing
-                status="accepted",
-                message=f"Job queued for processing {len(documents)} documents"
-            )
-
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid JSON payload: {str(e)}"
+        orchestrator = IngestionOrchestrator(db)
+        result = orchestrator.ingest(
+            files=files,
+            payload=payload,
+            owner=owner,
+            comments=comments or collection_name,  # Support both for backward compat
+            idempotency_key=idempotency_key
         )
+        
+        return IngestResponse(
+            job_id=result["job_id"],
+            system_ids=result["system_ids"],
+            status=result["status"],
+            message=f"Job {result['job_id']} accepted for processing"
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
@@ -317,9 +153,103 @@ def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/objects/{system_id}")
-async def get_object(system_id: str):
-    """Get asset metadata by system ID (Phase 2: Query implementation)"""
-    return {"id": system_id, "status": "not_found"}
+def get_object(system_id: str, db: Session = Depends(get_db)):
+    """
+    Get canonical metadata for an asset by system ID.
+    
+    Returns complete asset metadata including:
+    - Basic info (id, kind, uri, size, etc.)
+    - Processing status
+    - Cluster info (for media)
+    - Schema info (for JSON)
+    - Tags and metadata
+    """
+    try:
+        asset_uuid = UUID(system_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid system ID format")
+    
+    # Query asset
+    asset = db.query(Asset).filter(Asset.id == asset_uuid).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    # Build response based on asset kind
+    response = {
+        "id": str(asset.id),
+        "kind": asset.kind,
+        "uri": asset.uri if asset.uri and not asset.uri.startswith("json://pending") else None,  # Hide placeholder URIs
+        "content_type": asset.content_type,
+        "size_bytes": asset.size_bytes,
+        "sha256": asset.sha256,
+        "owner": asset.owner,
+        "created_at": asset.created_at.isoformat(),
+        "updated_at": asset.updated_at.isoformat(),
+        "status": asset.status,
+    }
+    
+    # Add kind-specific fields
+    if asset.kind == "media":
+        # Media-specific fields
+        response["tags"] = asset.tags or []
+        response["embedding"] = {
+            "dimension": 512 if asset.embedding else None,
+            "model": "clip-ViT-B-32" if asset.embedding else None
+        }
+        
+        # Cluster info
+        if asset.cluster_id:
+            cluster = db.query(Cluster).filter(Cluster.id == asset.cluster_id).first()
+            if cluster:
+                response["cluster"] = {
+                    "id": str(cluster.id),
+                    "name": cluster.name,
+                    "provisional": cluster.provisional
+                }
+        
+        # Raw asset info
+        if asset.raw_asset_id:
+            raw_asset = db.query(AssetRaw).filter(AssetRaw.id == asset.raw_asset_id).first()
+            if raw_asset:
+                response["raw_asset"] = {
+                    "id": str(raw_asset.id),
+                    "uri": raw_asset.uri,
+                    "request_id": raw_asset.request_id,
+                    "part_id": raw_asset.part_id
+                }
+        
+        # Metadata (stored as JSONB) - not in model yet, skip for now
+        # if hasattr(asset, 'metadata') and asset.metadata:
+        #     response["metadata"] = asset.metadata
+    
+    elif asset.kind == "json":
+        # JSON-specific fields
+        if asset.schema_id:
+            schema = db.query(SchemaDef).filter(SchemaDef.id == asset.schema_id).first()
+            if schema:
+                response["schema"] = {
+                    "id": str(schema.id),
+                    "name": schema.name,
+                    "storage_choice": schema.storage_choice,
+                    "status": schema.status,
+                    "ddl": schema.ddl
+                }
+        
+        # Storage location - extract from URI if present
+        if asset.uri:
+            # URI format: "sql://table_name/hash" or "jsonb://collection_name/hash"
+            # After splitting "sql://table_name/hash" by "/", we get ["sql:", "", "table_name", "hash"]
+            # So parts[1] is empty and parts[2] is the table/collection name
+            if asset.uri.startswith("sql://"):
+                parts = asset.uri.split("/")
+                if len(parts) >= 3:
+                    response["storage_location"] = parts[2]  # table name
+            elif asset.uri.startswith("jsonb://"):
+                parts = asset.uri.split("/")
+                if len(parts) >= 3:
+                    response["storage_location"] = parts[2]  # collection name
+    
+    return response
 
 
 @router.get("/search", response_model=SearchResponse)
