@@ -7,7 +7,11 @@ A smart storage system with a unified frontend interface that intelligently proc
 - **Unified Ingestion**: Single `/api/v1/ingest` endpoint accepts both media files and JSON documents
 - **Media Intelligence**: Automatic image/video analysis using CLIP embeddings, clustering similar content into organized directories
 - **Schema Inference**: Intelligent JSON schema analysis with automatic SQL vs JSONB storage decision
-- **Semantic Search**: Text-to-image/video search using CLIP embeddings
+- **Semantic Search**: Text-to-image/video search using CLIP embeddings with pgvector ANN search (Phase 7 ✅)
+  - Fast similarity search with HNSW indexes
+  - Multi-filter support (type, owner, cluster, tags, threshold)
+  - Query timing and performance metrics
+  - 28 comprehensive unit tests
 - **Human-in-the-Loop**: Provisional schema proposals and cluster assignments require admin approval
 - **Audit Trail**: Complete lineage tracking for all ingested assets
 
@@ -82,6 +86,7 @@ docker-compose up -d
 ```
 
 This starts:
+
 - PostgreSQL with pgvector
 - Application server
 - Redis (optional, for job queue)
@@ -93,6 +98,7 @@ This starts:
 Upload media files or JSON documents.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/ingest \
   -F "files[]=@image.jpg" \
@@ -102,6 +108,7 @@ curl -X POST http://localhost:8000/api/v1/ingest \
 ```
 
 **Response:**
+
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -115,6 +122,7 @@ curl -X POST http://localhost:8000/api/v1/ingest \
 Check processing status.
 
 **Response:**
+
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -130,24 +138,57 @@ Check processing status.
 
 ### GET /api/v1/search
 
-Semantic search for media files.
+Semantic search for media files using CLIP embeddings.
 
 **Request:**
+
 ```bash
-curl "http://localhost:8000/api/v1/search?query=dog&type=media&limit=10"
+# Simple search
+curl "http://localhost:8000/api/v1/search?query=dog&limit=10"
+
+# Search with filters
+curl "http://localhost:8000/api/v1/search?query=sunset&type=media&threshold=0.7&tags=landscape"
 ```
 
+**Query Parameters:**
+
+- `query` (required): Search text
+- `type`: Filter by 'media' or 'json'
+- `limit`: Max results (default: 10, max: 100)
+- `threshold`: Min similarity score (default: 0.5, range: 0.0-1.0)
+- `owner`: Filter by owner
+- `cluster_id`: Filter by cluster UUID
+- `tags`: Comma-separated tags
+
 **Response:**
+
 ```json
 {
+  "query": "dog",
   "results": [
     {
       "id": "asset-uuid",
-      "uri": "media/clusters/cluster-123/asset.jpg",
+      "kind": "media",
+      "uri": "fs://media/clusters/cluster-123/asset.jpg",
       "tags": ["dog", "pet", "animal"],
-      "similarity": 0.92
+      "similarity_score": 0.9234,
+      "cluster": {
+        "id": "cluster-uuid",
+        "name": "Dogs"
+      },
+      "thumbnail_uri": "fs://derived/.../thumb.jpg",
+      "owner": "user123",
+      "created_at": "2025-11-14T12:00:00"
     }
-  ]
+  ],
+  "total": 1,
+  "query_time_ms": 45.23,
+  "filters_applied": {
+    "type": null,
+    "owner": null,
+    "min_similarity": 0.5,
+    "limit": 10
+  }
 }
 ```
 
