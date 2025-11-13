@@ -1,18 +1,61 @@
 # Main application entry point
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from src.config.settings import get_settings
 from src.api.routes import router
+from src.queue.manager import get_queue_backend, set_worker_supervisor, reset_queue_backend
+from src.queue.supervisor import WorkerSupervisor
+from src.queue.processors import JsonJobProcessor, MediaJobProcessor
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan - startup and shutdown."""
+    # Startup
+    logger.info("Starting worker supervisor...")
+    queue_backend = get_queue_backend()
+    
+    # Register processors
+    processors = {
+        "json": JsonJobProcessor(),
+        "media": MediaJobProcessor(),  # Placeholder for future
+    }
+    
+    # Create and start supervisor
+    supervisor = WorkerSupervisor(
+        queue_backend=queue_backend,
+        processors=processors,
+        num_workers=settings.worker_threads
+    )
+    supervisor.start()
+    set_worker_supervisor(supervisor)
+    logger.info(f"Worker supervisor started with {settings.worker_threads} workers")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Stopping worker supervisor...")
+    supervisor.stop()
+    queue_backend.close()
+    # Reset the singleton so subsequent get_queue_backend() calls create a fresh backend
+    reset_queue_backend()
+    logger.info("Worker supervisor stopped")
+
 
 app = FastAPI(
     title="Automated File Allocator API",
     description="Smart storage system for media and JSON documents",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # CORS middleware
