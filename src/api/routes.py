@@ -9,9 +9,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.catalog.database import get_db
-from src.catalog.models import SchemaDef, Job, Asset
+from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Lineage
 from src.queue.manager import get_queue_backend
 from src.queue.interface import QueueMessage
+from src.storage.factory import get_storage_adapter
+from src.ingest.json_processor import JsonProcessor, JsonProcessingError
 
 router = APIRouter()
 
@@ -50,7 +52,7 @@ def ingest(
     """
     Unified ingestion endpoint for media files and JSON documents.
 
-    - **files**: Media files (images, videos, audio) - not yet implemented
+    - **files**: Media files (images, videos, audio)
     - **payload**: JSON object or array (as JSON string)
     - **owner**: Optional owner identifier
     - **comments**: Optional metadata/comments (used as hint for schema generation)
@@ -62,78 +64,183 @@ def ingest(
     request_id = idempotency_key or str(uuid4())
     job_id = uuid4()
 
-    # For now, only handle JSON payloads (media processing is separate)
-    if not payload:
+    # Validate that either files or payload is provided
+    if not files and not payload:
         raise HTTPException(
             status_code=400,
-            detail="No payload provided. For JSON ingestion, provide 'payload' parameter."
+            detail="Either 'files' or 'payload' must be provided"
         )
 
     try:
-        # Parse JSON payload
-        parsed_payload = json.loads(payload)
-
-        # Ensure payload is a list
-        if isinstance(parsed_payload, dict):
-            documents = [parsed_payload]
-        elif isinstance(parsed_payload, list):
-            documents = parsed_payload
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Payload must be a JSON object or array"
-            )
-
-        # Create job record (assets will be created during processing)
-        job = Job(
-            id=job_id,
-            request_id=request_id,
-            job_type="json",
-            status="queued",
-            job_data={
-                "job_id": str(job_id),  # Include for processor to update asset_ids
-                "documents": documents,
-                "request_id": request_id,
-                "owner": owner,
-                "collection_name_hint": collection_name or comments
-            },
-            asset_ids=None  # Will be updated after processing
-        )
-        db.add(job)
-        # Flush to get the job ID but don't commit yet
-        db.flush()
-        
-        # Build queue message from in-memory job data
+        storage = get_storage_adapter()
         queue_backend = get_queue_backend()
-        queue_message = QueueMessage(
-            job_id=job_id,
-            job_type="json",
-            job_data=job.job_data,
-            priority=0,
-            retry_count=0,
-            max_retries=3,
-            created_at=datetime.utcnow()
-        )
+        system_ids = []
         
-        # Enqueue job before committing to avoid orphan jobs if enqueue fails
-        # If enqueue fails, the transaction will rollback
-        try:
-            queue_backend.enqueue(queue_message)
-            # Only commit after successful enqueue
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to enqueue job: {str(e)}"
+        # Handle media files
+        if files:
+            asset_raw_ids = []
+            asset_ids = []
+            
+            for idx, file in enumerate(files):
+                # Read file content
+                file_content = file.file.read()
+                file.file.seek(0)  # Reset for storage
+                
+                # Store raw file
+                part_id = f"part_{idx}"
+                raw_uri = storage.store_raw(request_id, part_id, file.file, file.filename or f"file_{idx}")
+                
+                # Create AssetRaw record
+                asset_raw = AssetRaw(
+                    request_id=request_id,
+                    part_id=part_id,
+                    uri=raw_uri,
+                    size_bytes=len(file_content),
+                    content_type=file.content_type
+                )
+                db.add(asset_raw)
+                db.flush()
+                asset_raw_ids.append(asset_raw.id)
+                
+                # Create Asset record (will be updated during processing)
+                asset = Asset(
+                    kind="media",
+                    uri=raw_uri,
+                    size_bytes=len(file_content),
+                    content_type=file.content_type,
+                    owner=owner,
+                    status="queued",
+                    raw_asset_id=asset_raw.id
+                )
+                db.add(asset)
+                db.flush()
+                asset_ids.append(asset.id)
+                system_ids.append(str(asset.id))
+            
+            # Create job record for media processing
+            job = Job(
+                id=job_id,
+                request_id=request_id,
+                job_type="media",
+                status="queued",
+                job_data={
+                    "job_id": str(job_id),
+                    "request_id": request_id,
+                    "asset_ids": [str(aid) for aid in asset_ids],
+                    "asset_raw_ids": [str(aid) for aid in asset_raw_ids],
+                    "owner": owner,
+                    "comments": comments
+                },
+                asset_ids=asset_ids
             )
+            db.add(job)
+            db.flush()
+            
+            # Log lineage
+            for asset_id in asset_ids:
+                lineage = Lineage(
+                    request_id=request_id,
+                    asset_id=asset_id,
+                    stage="ingest",
+                    detail={"files_count": len(files)},
+                    success=True
+                )
+                db.add(lineage)
+            
+            # Build queue message
+            queue_message = QueueMessage(
+                job_id=job_id,
+                job_type="media",
+                job_data=job.job_data,
+                priority=0,
+                retry_count=0,
+                max_retries=3,
+                created_at=datetime.utcnow()
+            )
+            
+            # Enqueue and commit
+            try:
+                queue_backend.enqueue(queue_message)
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to enqueue job: {str(e)}"
+                )
+            
+            return IngestResponse(
+                job_id=str(job_id),
+                system_ids=system_ids,
+                status="accepted",
+                message=f"Job queued for processing {len(files)} media file(s)"
+            )
+        
+        # Handle JSON payload
+        elif payload:
+            # Parse JSON payload
+            parsed_payload = json.loads(payload)
 
-        return IngestResponse(
-            job_id=str(job_id),
-            system_ids=[],  # Will be populated after processing
-            status="accepted",
-            message=f"Job queued for processing {len(documents)} documents"
-        )
+            # Ensure payload is a list
+            if isinstance(parsed_payload, dict):
+                documents = [parsed_payload]
+            elif isinstance(parsed_payload, list):
+                documents = parsed_payload
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Payload must be a JSON object or array"
+                )
+
+            # Create job record (assets will be created during processing)
+            job = Job(
+                id=job_id,
+                request_id=request_id,
+                job_type="json",
+                status="queued",
+                job_data={
+                    "job_id": str(job_id),  # Include for processor to update asset_ids
+                    "documents": documents,
+                    "request_id": request_id,
+                    "owner": owner,
+                    "collection_name_hint": collection_name or comments
+                },
+                asset_ids=None  # Will be updated after processing
+            )
+            db.add(job)
+            # Flush to get the job ID but don't commit yet
+            db.flush()
+            
+            # Build queue message from in-memory job data
+            queue_message = QueueMessage(
+                job_id=job_id,
+                job_type="json",
+                job_data=job.job_data,
+                priority=0,
+                retry_count=0,
+                max_retries=3,
+                created_at=datetime.utcnow()
+            )
+            
+            # Enqueue job before committing to avoid orphan jobs if enqueue fails
+            # If enqueue fails, the transaction will rollback
+            try:
+                queue_backend.enqueue(queue_message)
+                # Only commit after successful enqueue
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to enqueue job: {str(e)}"
+                )
+
+            return IngestResponse(
+                job_id=str(job_id),
+                system_ids=[],  # Will be populated after processing
+                status="accepted",
+                message=f"Job queued for processing {len(documents)} documents"
+            )
 
     except json.JSONDecodeError as e:
         raise HTTPException(

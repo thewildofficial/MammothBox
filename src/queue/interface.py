@@ -104,3 +104,4 @@ class QueueBackend(ABC):
         """Close the queue backend and cleanup resources."""
         pass
 
+

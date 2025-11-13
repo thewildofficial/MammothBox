@@ -83,3 +83,4 @@ def downgrade() -> None:
     op.execute('DROP TYPE IF EXISTS job_status')
     op.execute('DROP TYPE IF EXISTS job_type')
 
+

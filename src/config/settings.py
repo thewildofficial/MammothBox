@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Media Processing
     embedding_model: str = "openai/clip-vit-base-patch32"
     embedding_dim: int = 512
-    cluster_threshold: float = 0.8
+    cluster_threshold: float = 0.72  # Default threshold per spec
     max_image_size: int = 1024
     video_keyframes: int = 3
     
