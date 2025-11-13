@@ -14,13 +14,15 @@
 3. [System Architecture](#system-architecture)
 4. [API Endpoints Specification](#api-endpoints-specification)
 5. [Media Processing Pipeline](#media-processing-pipeline)
-6. [JSON Processing Pipeline](#json-processing-pipeline)
-7. [Search & Retrieval Pipeline](#search--retrieval-pipeline)
-8. [Admin Operations Pipeline](#admin-operations-pipeline)
-9. [Data Models & Database Schema](#data-models--database-schema)
-10. [Storage Architecture](#storage-architecture)
-11. [Error Handling & Resilience](#error-handling--resilience)
-12. [Performance Targets](#performance-targets)
+6. [Document & Text Processing Pipeline](#document--text-processing-pipeline)
+7. [JSON Processing Pipeline](#json-processing-pipeline)
+8. [Search & Retrieval Pipeline](#search--retrieval-pipeline)
+9. [Semantic Knowledge Organization](#semantic-knowledge-organization)
+10. [Admin Operations Pipeline](#admin-operations-pipeline)
+11. [Data Models & Database Schema](#data-models--database-schema)
+12. [Storage Architecture](#storage-architecture)
+13. [Error Handling & Resilience](#error-handling--resilience)
+14. [Performance Targets](#performance-targets)
 
 ---
 
@@ -34,9 +36,25 @@ Design a smart storage system with a single frontend interface that intelligentl
 **For Media Files (Images/Videos):**
 - Accept any media type through a unified frontend
 - Automatically analyze and categorize content using CLIP embeddings
+- Detect images that contain text and extract OCR content before semantic tagging
 - Place files with related existing media in appropriate directories
 - Create new directories for unique content categories
 - Organize subsequent related media into existing directories
+- Extract and index embedded images discovered inside container files (e.g., PDFs, EPUBs)
+
+**For Textual & Document Assets:**
+- Accept text-heavy formats (Markdown, PDF, EPUB, DOCX, PPTX, TXT, source code, etc.)
+- Split documents into semantically meaningful chunks with preserved hierarchy
+- Generate dense text embeddings for retrieval and cross-modal search
+- Surface embedded media (images, audio snippets) for downstream pipelines
+- Support recursive folder ingestion to process large corpora consistently
+
+**For Audio Assets:**
+- Accept raw audio uploads alongside other media
+- Detect whether files contain linguistic content or non-speech signals
+- Transcribe speech with streaming-capable models and generate text embeddings
+- Produce spectrogram embeddings for music or ambient audio when no speech is present
+- Categorize audio by genre, speaker, or acoustic profile for downstream search
 
 **For Structured Data (JSON Objects):**
 - Accept JSON objects through the same frontend
@@ -49,6 +67,8 @@ Design a smart storage system with a single frontend interface that intelligentl
 - Must handle both single and batch data inputs
 - Should maintain consistency and optimize for query performance
 - Human-in-the-loop: provisional decisions require admin approval
+- Critical enhancements must prioritize semantic search coverage (text + media), and automated knowledge organization
+- Future enhancements include full recursive folder ingestion and advanced audio heuristics
 
 ---
 
@@ -74,6 +94,12 @@ Design a smart storage system with a single frontend interface that intelligentl
 - **onnxruntime 1.16.3**: ONNX runtime for optimized inference
 - **Model**: `clip-ViT-B-32` (512-dimensional embeddings, CPU-optimized)
 
+### Text & Document Embeddings
+- **sentence-transformers 2.2.2**: Long-form text encoders (`all-MiniLM-L12-v2`, `gte-base`)
+- **langchain-text-splitters 0.1.x**: Structure-aware chunking for documents and code
+- **unstructured 0.12.x**: Multi-format document parsing (PDF, EPUB, PPTX, DOCX, HTML)
+- **rapidfuzz 3.6.x**: Fuzzy matching for de-duplication and content linking
+
 ### Vision Language Model (VLM)
 - **google-generativeai**: Google Generative AI SDK for Gemini API
 - **Model**: `gemini-2.5-flash` or `gemini-2.5-flash-lite` (for image analysis and metadata extraction)
@@ -84,6 +110,9 @@ Design a smart storage system with a single frontend interface that intelligentl
 - **opencv-python-headless 4.8.1.78**: Video processing and keyframe extraction
 - **imagehash 4.3.1**: Perceptual hashing for deduplication
 - **ffmpeg-python 0.2.0**: Video transcoding and keyframe extraction
+- **pytesseract 0.3.10**: OCR for text-in-image detection
+- **pdfminer.six 20231228**: Embedded image extraction from PDFs
+- **python-docx 1.0.x / python-pptx 0.6.x**: Office document parsing
 
 ### Storage
 - **boto3 1.29.7**: AWS S3 SDK (for production S3 backend)
@@ -97,6 +126,13 @@ Design a smart storage system with a single frontend interface that intelligentl
 - **python-multipart 0.0.6**: Multipart form data handling
 - **python-dotenv 1.0.0**: Environment variable management
 - **httpx 0.25.2**: HTTP client for external API calls
+- **anytree 2.12.1**: LLM-driven hierarchy construction and traversal
+- **networkx 3.2.1**: Graph analytics for similarity tree evaluation
+
+### Speech & Audio Analysis
+- **faster-whisper 0.10.x**: Low-latency speech-to-text transcription
+- **librosa 0.10.1**: Audio feature extraction and genre detection
+- **pydub 0.25.1**: Audio normalization and segment handling
 
 ### Testing & Development
 - **pytest 7.4.3**: Testing framework
@@ -144,19 +180,26 @@ Design a smart storage system with a single frontend interface that intelligentl
 │  - Lineage tracking                                         │
 └────────────────────┬────────────────────────────────────────┘
                      │
-        ┌────────────┴────────────┐
-        │                         │
-┌───────▼────────┐      ┌─────────▼──────────┐
-│  Media         │      │  JSON              │
-│  Processor     │      │  Processor         │
-│                │      │                    │
-│  - Normalize   │      │  - Flatten         │
-│  - Embed       │      │  - Analyze         │
-│  - Cluster     │      │  - SchemaDecider   │
-│  - Dedupe      │      │  - DDL Generate    │
-└───────┬────────┘      └─────────┬──────────┘
-        │                         │
-        └────────────┬────────────┘
+        ┌────────────┬────────────┬────────────┐
+        │            │            │            │
+┌───────▼────────┐┌──▼──────────┐┌────────────▼──────────┐
+│  Media         ││  JSON       ││  Document & Text      │
+│  Processor     ││  Processor  ││  Processor            │
+│                ││             ││                       │
+│  - Normalize   ││  - Flatten  ││  - Parse & Chunk      │
+│  - Embed       ││  - Analyze  ││  - Embed & Summarize  │
+│  - Cluster     ││  - Schema   ││  - Embedded Media     │
+│  - Dedupe      ││    Decider  ││    Extraction         │
+└───────┬────────┘└─────────────┘└────────────┬──────────┘
+        │                                     │
+        └────────────┬────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────┐
+│      Knowledge Graph & Semantic Tree Builder                │
+│  - Similarity graph construction                            │
+│  - Hierarchical LLM routing                                 │
+│  - Guardrail enforcement                                    │
+└────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────────┐
 │         PostgreSQL + pgvector                               │
@@ -192,11 +235,22 @@ src/
 │   ├── embedder.py
 │   ├── clusterer.py
 │   └── deduplicator.py
+├── documents/        # Text & document processing pipeline
+│   ├── __init__.py
+│   ├── processor.py
+│   ├── chunker.py
+│   ├── embedder.py
+│   └── ocr.py
 ├── json/             # JSON processing pipeline
 │   ├── __init__.py
 │   ├── processor.py
 │   ├── schema_decider.py
 │   └── ddl_generator.py
+├── knowledge/        # Semantic hierarchy builder
+│   ├── __init__.py
+│   ├── organizer.py
+│   ├── guardrails.py
+│   └── tree_models.py
 ├── catalog/          # Metadata catalog service
 │   ├── __init__.py
 │   ├── models.py      # SQLAlchemy models
@@ -248,6 +302,7 @@ Future: API key or JWT token authentication
 |-------|------|----------|-------------|
 | `files[]` | File[] | No* | Media files (images, videos, audio). Required if `payload` not provided |
 | `payload` | String (JSON) | No* | JSON object or array. Required if `files[]` not provided |
+| `folder_uri` | String (URI) | No | Remote/local URI to a folder/archive to ingest recursively (future enhancement behind feature flag) |
 | `owner` | String | No | Owner identifier for tracking |
 | `comments` | String | No | Optional metadata/comments to aid processing |
 | `idempotency_key` | String | No | Idempotency key for deduplication |
@@ -316,11 +371,12 @@ curl -X POST http://localhost:8000/api/v1/ingest \
 **Processing Flow:**
 1. Validate request (files or payload present)
 2. Generate `request_id` and `job_id`
-3. Store raw bytes to `storage/incoming/{request_id}/{part_id}`
-4. Create `asset_raw` records in database
-5. Create `lineage` audit records
-6. Enqueue processing jobs (one per logical object)
-7. Return 202 with job_id immediately
+3. (Optional) If `folder_uri` provided: enumerate files recursively, respecting ignore patterns, and enqueue each asset as a child job
+4. Store raw bytes to `storage/incoming/{request_id}/{part_id}`
+5. Create `asset_raw` records in database
+6. Create `lineage` audit records
+7. Enqueue processing jobs (one per logical object or document chunk)
+8. Return 202 with job_id immediately
 
 ---
 
@@ -742,7 +798,7 @@ The media processing pipeline handles images, videos, and audio files. It perfor
 - `codec`: For videos/audio
 
 **Technology:**
-- `python-magic` or `filetype` for MIME detection
+- `python-magic` or `filetype` for MIveME detection
 - `Pillow` for image metadata
 - `ffprobe` (via `ffmpeg-python`) for video metadata
 
@@ -757,6 +813,11 @@ The media processing pipeline handles images, videos, and audio files. It perfor
 3. Generate thumbnail (256x256)
 4. Extract EXIF metadata
 5. Compute perceptual hash (`pHash`) for deduplication
+6. Run adaptive text-detection heuristic (edge density + OCR confidence scoring)
+7. If text detected above threshold:
+   - Extract OCR text with `pytesseract`
+   - Generate bounding box metadata for overlay rendering
+   - Emit derived text chunk for cross-modal search
 
 **Videos:**
 1. Extract keyframes using scene detection:
@@ -768,10 +829,13 @@ The media processing pipeline handles images, videos, and audio files. It perfor
    - Analyze each keyframe separately
    - Aggregate tags and metadata across keyframes
    - Use most representative keyframe for cluster naming
+5. Detect text overlays per keyframe; route positive frames to OCR pipeline
 
 **Audio:**
 1. Extract metadata (duration, bitrate, codec, sample rate)
-2. Generate waveform visualization (optional)
+2. Run lightweight VAD + language detection to decide speech vs non-speech
+3. Generate waveform visualization (optional)
+4. Segment long recordings into logical chapters for transcription
 
 **Output:** Normalized media files stored in `storage/incoming/{request_id}/normalized/`
 
@@ -796,9 +860,13 @@ The media processing pipeline handles images, videos, and audio files. It perfor
    - Mean-pool keyframe embeddings → single 512-d vector
    - Store individual keyframe embeddings in `video_frame` table
 4. For audio:
-   - Extract visual representation (spectrogram)
-   - Encode spectrogram as image using CLIP
-   - Output: 512-dimensional vector
+   - If speech detected:
+     - Transcribe with `faster-whisper` (streaming friendly)
+     - Chunk transcript sentences and embed with text encoder (768-d)
+     - Generate speaker diarization metadata when available
+   - If no speech detected:
+     - classify based
+   - Output: paired audio + transcript embeddings
 
 **Performance Targets:**
 - Image encoding: < 250ms per image (CPU)
@@ -807,7 +875,9 @@ The media processing pipeline handles images, videos, and audio files. It perfor
 
 **Output:**
 - `embedding`: 512-d vector (stored in `asset.embedding`)
+- `text_embedding`: 768-d vector (stored in `asset.text_embedding` when applicable)
 - `video_frame` records (for videos)
+- `audio_segment` records (for segmented speech/music)
 
 **Technology:**
 - `sentence-transformers` with `clip-ViT-B-32`
@@ -1200,6 +1270,86 @@ Done
 
 ---
 
+## Document & Text Processing Pipeline
+
+### Overview
+The document & text processing pipeline ingests long-form textual assets, source code repositories, and rich documents (PDF, EPUB, DOCX, PPTX, Markdown, HTML). It normalizes raw content, preserves semantic structure, generates dense embeddings for retrieval, and surfaces embedded media for downstream pipelines.
+
+### Supported Formats
+- Plain text (`.txt`, `.md`, `.rst`)
+- Office documents (`.docx`, `.pptx`, `.xlsx` as structured tables)
+- eBooks (`.pdf`, `.epub`, `.mobi`)
+- Rich HTML and Markdown (including front matter metadata)
+- Source code files (`.py`, `.js`, `.java`, `.ipynb` metadata only)
+
+### Pipeline Stages
+
+#### Stage 1: Discovery & Intake
+**Module:** `src/documents/processor.py`
+
+1. Expand `folder_uri` inputs recursively, respecting `.allocatorignore` patterns
+2. Detect archives (`.zip`, `.tar`, `.rar`) and stream-extract contents without loading fully into memory
+3. Register each discovered file as a virtual asset linked to the parent ingestion job
+4. Identify container relationships (e.g., EPUB packages, DOCX zip bundles)
+
+#### Stage 2: Parsing & Normalization
+**Module:** `src/documents/processor.py`
+
+1. Route each file to format-specific parser (`unstructured`, `pdfminer`, `python-docx`, `python-pptx`)
+2. Preserve document structure (sections, headings, lists, tables, slide titles)
+3. Normalize text encoding (UTF-8) and remove control characters
+4. Extract metadata (author, title, TOC, publication date, slide numbers)
+
+#### Stage 3: Chunking & Embedding
+**Module:** `src/documents/chunker.py`, `src/documents/embedder.py`
+
+1. Apply structure-aware chunking (heading-based, code-aware, slide-aware)
+2. Generate semantic embeddings per chunk using `sentence-transformers` text models (768-d)
+3. Maintain cross references to original page/slide offsets and anchors
+4. Record cumulative token counts for paging and summarization budgets
+
+#### Stage 4: Metadata Enrichment & Summaries
+**Module:** `src/documents/processor.py`, `src/knowledge/organizer.py`
+
+1. Produce extractive summaries (per document and per section)
+2. Generate keywords, topics, and named entities
+3. Align document topics with existing knowledge tree categories
+4. Flag regulatory or PII-sensitive content for approval workflows
+
+#### Stage 5: Embedded Media Extraction
+**Module:** `src/documents/ocr.py`, `src/media/processor.py`
+
+1. Detect embedded images (figures, diagrams, covers) and route them through the image heuristic pipeline
+2. Extract audio/video attachments (e.g., embedded recordings) for media pipeline processing
+3. Associate derived assets back to parent document chunks for cross-modal retrieval
+4. Track relationships (`document_chunk_id`, `asset_id`) in `lineage` for provenance
+
+#### Stage 6: Code & Notebook Handling
+**Module:** `src/documents/chunker.py`
+
+1. Detect code fences and tokenize using language-aware splitters
+2. Generate additional embeddings focused on structural similarity (AST fingerprints)
+3. For Jupyter notebooks, extract markdown + code cells, capture outputs as images, and route images to heuristics
+
+### Flow Summary
+```
+Folder / Document Upload
+    ↓
+[Discovery & Intake]
+    ↓
+[Parsing & Normalization]
+    ↓
+[Chunking & Embedding]
+    ↓
+[Metadata Enrichment]
+    ↓
+[Embedded Media Extraction]
+    ↓
+[Knowledge Tree Alignment]
+```
+
+---
+
 ## JSON Processing Pipeline
 
 ### Overview
@@ -1445,17 +1595,20 @@ Semantic search using CLIP embeddings for text-to-image/video retrieval.
 #### Stage 1: Query Processing
 **Module:** `src/api/routes.py` → `src/catalog/queries.py`
 
-**Input:** Query string, filters (type, owner, cluster, tags)
+**Input:** Query string, filters (type, owner, cluster, tags), optional target modality
 
 **Process:**
 1. Validate query (non-empty, length limits)
-2. Parse filters
-3. Encode query text using CLIP text encoder:
+2. Parse filters and requested modality (`media`, `document`, `audio`, `json`, `mixed`)
+3. Detect query intent (keyword vs semantic) and language
+4. Encode query text using appropriate encoder:
    ```python
-   query_embedding = model.encode(query_text, normalize_embeddings=True)
+   media_query = clip_model.encode(query_text, normalize_embeddings=True)
+   doc_query = text_model.encode(query_text, normalize_embeddings=True)
    ```
+5. Generate optional keyword search terms for hybrid ranking
 
-**Output:** 512-d query vector
+**Output:** Multi-vector query bundle (`media_query`, `doc_query`, transcript token set)
 
 ---
 
@@ -1463,14 +1616,12 @@ Semantic search using CLIP embeddings for text-to-image/video retrieval.
 **Module:** `src/catalog/queries.py`
 
 **Process:**
-1. Build SQL query with pgvector ANN search:
+1. Build SQL queries across modalities:
    ```sql
-   SELECT 
-       a.id,
-       a.uri,
-       a.tags,
-       a.cluster_id,
-       1 - (a.embedding <=> %s::vector) AS similarity
+   -- Media ANN
+   SELECT a.id, a.uri, a.tags, a.cluster_id,
+          1 - (a.embedding <=> %s::vector) AS similarity,
+          'media'::text AS modality
    FROM asset a
    WHERE a.kind = 'media'
      AND a.status = 'done'
@@ -1478,11 +1629,26 @@ Semantic search using CLIP embeddings for text-to-image/video retrieval.
      AND (a.owner = %s OR %s IS NULL)
      AND (a.cluster_id = %s::uuid OR %s IS NULL)
      AND (a.tags && %s::text[] OR %s IS NULL)
-   ORDER BY a.embedding <=> %s::vector
-   LIMIT %s
+   UNION ALL
+   -- Document chunks
+   SELECT dc.id, dc.uri, dc.tags, dc.parent_asset_id AS cluster_id,
+          1 - (dc.text_embedding <=> %s::vector) AS similarity,
+          'document'::text AS modality
+   FROM document_chunk dc
+   WHERE (dc.owner = %s OR %s IS NULL)
+     AND (dc.asset_id = %s::uuid OR %s IS NULL)
+   UNION ALL
+   -- Audio transcripts
+   SELECT at.id, at.uri, at.tags, at.asset_id AS cluster_id,
+          1 - (at.text_embedding <=> %s::vector) AS similarity,
+          'audio'::text AS modality
+   FROM audio_transcript at
+   WHERE at.embedding IS NOT NULL
+   ORDER BY similarity DESC
+   LIMIT %s;
    ```
-2. Execute query with query vector parameter
-3. Filter results by `similarity >= threshold`
+2. Execute queries with modality-specific vectors and combine results
+3. Filter results by `similarity >= threshold` and optionally blend BM25 keyword scores
 
 **Technology:**
 - `pgvector` `<=>` operator for cosine distance
@@ -1500,11 +1666,13 @@ Semantic search using CLIP embeddings for text-to-image/video retrieval.
 **Process:**
 1. Enrich results with:
    - Cluster metadata
-   - Thumbnail URIs
-   - Full asset metadata
-2. Sort by similarity (descending)
-3. Limit to requested `limit`
-4. Format response JSON
+   - Thumbnail URIs or document snippet previews
+   - Transcript excerpts and highlighting spans
+   - Knowledge tree path (e.g., `Books > Ursula K. Le Guin > Sci-Fi`)
+2. Interleave modalities based on re-ranking policy (critical → promote document/media mix)
+3. Sort by blended similarity score and knowledge tree relevance
+4. Limit to requested `limit`
+5. Format response JSON with modality annotations and hierarchical breadcrumbs
 
 **Output:** Search results array
 
@@ -1516,20 +1684,85 @@ Semantic search using CLIP embeddings for text-to-image/video retrieval.
 Query Text + Filters
     ↓
 [Query Processing]
-    └─→ CLIP text encoder → 512-d vector
+    ├─→ CLIP text encoder → media_query
+    ├─→ Text encoder → doc_query
+    └─→ Keyword expansion / language detection
     ↓
 [Vector Similarity Search]
-    ├─→ pgvector ANN search (cosine distance)
-    ├─→ Apply filters (type, owner, cluster, tags)
-    └─→ Filter by threshold
+    ├─→ Media ANN (asset.embedding)
+    ├─→ Document ANN (document_chunk.text_embedding)
+    └─→ Audio transcript ANN (audio_transcript.text_embedding)
+    ↓
+[Knowledge Tree Re-Ranker]
+    ├─→ Merge modalities
+    ├─→ Apply guardrails & hierarchical boosts
+    └─→ Enforce similarity thresholds
     ↓
 [Result Formatting]
-    ├─→ Enrich with metadata
-    ├─→ Sort by similarity
+    ├─→ Enrich with metadata + snippets
+    ├─→ Attach knowledge tree breadcrumbs
     └─→ Limit results
     ↓
 JSON Response
 ```
+
+---
+
+## Semantic Knowledge Organization
+
+### Overview
+The semantic knowledge organization pipeline builds and maintains a prioritized hierarchy (e.g., `Books → Authors → Genres`) that groups semantically similar assets. It enables guided exploration, context-aware search boosts, and guardrail-enforced content placement powered by LLM reasoning.
+
+### Objectives (Critical)
+- Automatically organize processed assets into a tree-aligned taxonomy after ingestion
+- Preserve explainability for every placement decision via LLM-generated rationales
+- Enforce guardrails to prevent drift, duplication, or cyclic relationships
+- Expose hierarchy paths for UI navigation and relevance boosting during search
+
+### Pipeline Stages
+
+#### Stage 1: Similarity Graph Construction
+**Module:** `src/knowledge/organizer.py`
+
+1. Build modality-specific kNN graphs from embeddings (media, documents, audio)
+2. Merge graphs into a unified similarity matrix with modality weighting
+3. Detect candidate clusters using community detection (Louvain / Leiden)
+
+#### Stage 2: LLM-Based Node Labeling
+**Module:** `src/knowledge/organizer.py`
+
+1. Summarize each candidate cluster using representative assets
+2. Call the LLM with structured prompts to propose node names and hierarchy levels
+3. Produce fallback names using deterministic heuristics when LLM confidence is low
+
+#### Stage 3: Guardrails & Validation
+**Module:** `src/knowledge/guardrails.py`
+
+1. Validate proposed nodes against policy rules (PII, sensitive terms, profanity)
+2. Enforce unique path constraints and prevent cycles
+3. Apply similarity thresholds required for critical placement decisions
+4. Persist approved nodes in `knowledge_node` table with versioning
+
+#### Stage 4: Tree Assembly & Prioritization
+**Module:** `src/knowledge/tree_models.py`
+
+1. Assemble parent-child relationships based on LLM recommendations and guardrail output
+2. Compute priority scores (recency, user access frequency, semantic coherence)
+3. Update cluster centroids with aggregated embeddings for each node
+4. Publish diff events for downstream consumers (UI, search re-ranker)
+
+#### Stage 5: Continuous Learning
+**Module:** `src/knowledge/organizer.py`
+
+1. Monitor new assets for taxonomy drift; trigger partial re-balancing when needed
+2. Allow admins to approve or override node placements (human-in-the-loop)
+3. Version the tree and maintain changelog entries in `lineage`
+
+### Outputs
+- `knowledge_node` records with hierarchy metadata and guardrail status
+- `knowledge_edge` relationships capturing parent-child links
+- Placement rationale stored alongside lineage for auditability
+- Boosting hints fed back into the search re-ranker
 
 ---
 
@@ -1629,7 +1862,7 @@ Canonical metadata for all assets.
 ```sql
 CREATE TABLE asset (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    kind TEXT CHECK (kind IN ('media', 'json')) NOT NULL,
+    kind TEXT CHECK (kind IN ('media', 'json', 'document', 'audio')) NOT NULL,
     uri TEXT,  -- NULL for JSON stored in SQL tables
     sha256 TEXT,
     content_type TEXT,
@@ -1641,6 +1874,7 @@ CREATE TABLE asset (
     schema_id UUID REFERENCES schema_def(id),
     tags TEXT[],
     embedding vector(512),  -- pgvector type
+    text_embedding vector(768),  -- Document/audio transcript embeddings
     storage_location TEXT,  -- Table/collection name
     storage_id UUID,  -- Row/document ID
     metadata JSONB  -- Additional metadata (EXIF, etc.)
@@ -1651,6 +1885,7 @@ CREATE INDEX idx_asset_schema_id ON asset(schema_id);
 CREATE INDEX idx_asset_status ON asset(status);
 CREATE INDEX idx_asset_tags_gin ON asset USING GIN(tags);
 CREATE INDEX idx_asset_embedding_hnsw ON asset USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_asset_text_embedding_hnsw ON asset USING hnsw (text_embedding vector_cosine_ops);
 ```
 
 #### `cluster`
@@ -1731,6 +1966,113 @@ CREATE INDEX idx_video_frame_embedding_hnsw ON video_frame USING hnsw (embedding
 
 ---
 
+#### `document_chunk`
+Flattened document sections with embeddings.
+
+```sql
+CREATE TABLE document_chunk (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    asset_id UUID REFERENCES asset(id) NOT NULL,
+    uri TEXT,
+    title TEXT,
+    heading_path TEXT[],  -- e.g., {Chapter 1, Section A}
+    text TEXT NOT NULL,
+    text_embedding vector(768) NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    tokens_count INTEGER,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(asset_id, chunk_index)
+);
+
+CREATE INDEX idx_document_chunk_asset_id ON document_chunk(asset_id);
+CREATE INDEX idx_document_chunk_text_embedding_hnsw ON document_chunk USING hnsw (text_embedding vector_cosine_ops);
+CREATE INDEX idx_document_chunk_heading_path_gin ON document_chunk USING GIN(heading_path);
+```
+
+#### `audio_segment`
+Segment-level metadata for audio assets.
+
+```sql
+CREATE TABLE audio_segment (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    asset_id UUID REFERENCES asset(id) NOT NULL,
+    segment_index INTEGER NOT NULL,
+    start_time REAL NOT NULL,
+    end_time REAL NOT NULL,
+    kind TEXT CHECK (kind IN ('speech', 'music', 'noise')) NOT NULL,
+    embedding vector(512),
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(asset_id, segment_index)
+);
+
+CREATE INDEX idx_audio_segment_asset_id ON audio_segment(asset_id);
+CREATE INDEX idx_audio_segment_embedding_hnsw ON audio_segment USING hnsw (embedding vector_cosine_ops);
+```
+
+#### `audio_transcript`
+Textual transcripts aligned to audio segments.
+
+```sql
+CREATE TABLE audio_transcript (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    asset_id UUID REFERENCES asset(id) NOT NULL,
+    segment_id UUID REFERENCES audio_segment(id),
+    text TEXT NOT NULL,
+    text_embedding vector(768) NOT NULL,
+    language TEXT,
+    speaker_label TEXT,
+    confidence REAL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_audio_transcript_asset_id ON audio_transcript(asset_id);
+CREATE INDEX idx_audio_transcript_text_embedding_hnsw ON audio_transcript USING hnsw (text_embedding vector_cosine_ops);
+```
+
+#### `knowledge_node`
+Hierarchy nodes for semantic organization.
+
+```sql
+CREATE TABLE knowledge_node (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    path TEXT[] NOT NULL,
+    depth INTEGER NOT NULL,
+    summary TEXT,
+    guardrail_status TEXT CHECK (guardrail_status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+    embedding vector(768),
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(path)
+);
+
+CREATE INDEX idx_knowledge_node_depth ON knowledge_node(depth);
+CREATE INDEX idx_knowledge_node_path_gin ON knowledge_node USING GIN(path);
+CREATE INDEX idx_knowledge_node_embedding_hnsw ON knowledge_node USING hnsw (embedding vector_cosine_ops);
+```
+
+#### `knowledge_edge`
+Parent-child relationships for the knowledge tree.
+
+```sql
+CREATE TABLE knowledge_edge (
+    parent_id UUID REFERENCES knowledge_node(id) ON DELETE CASCADE,
+    child_id UUID REFERENCES knowledge_node(id) ON DELETE CASCADE,
+    priority_score REAL,
+    rationale TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (parent_id, child_id)
+);
+
+CREATE INDEX idx_knowledge_edge_parent ON knowledge_edge(parent_id);
+CREATE INDEX idx_knowledge_edge_child ON knowledge_edge(child_id);
+```
+
+---
+
 ## Storage Architecture
 
 ### Storage Backend Abstraction
@@ -1763,6 +2105,7 @@ storage/
 ├── incoming/
 │   └── {request_id}/
 │       └── {part_id}.{ext}
+│       └── chunks/{chunk_id}.json  # normalized document chunks
 ├── media/
 │   ├── clusters/
 │   │   └── {cluster_id}/
@@ -1772,6 +2115,14 @@ storage/
 │           └── {asset_id}/
 │               ├── thumb.jpg
 │               └── ...
+├── documents/
+│   └── {asset_id}/
+│       ├── chunks/{chunk_index}.json
+│       └── embedded_media/{derived_asset_id}.{ext}
+└── audio/
+    └── {asset_id}/
+        ├── segments/{segment_index}.wav
+        └── transcripts/{segment_index}.json
 └── json/
     └── (temporary JSONB storage, if needed)
 ```
@@ -1782,8 +2133,13 @@ storage/
 ```
 s3://bucket-name/
 ├── incoming/{request_id}/{part_id}.{ext}
+├── incoming/{request_id}/chunks/{chunk_id}.json
 ├── media/clusters/{cluster_id}/{asset_id}.{ext}
 ├── media/derived/{cluster_id}/{asset_id}/thumb.jpg
+├── documents/{asset_id}/chunks/{chunk_index}.json
+├── documents/{asset_id}/embedded_media/{derived_asset_id}.{ext}
+├── audio/{asset_id}/segments/{segment_index}.wav
+├── audio/{asset_id}/transcripts/{segment_index}.json
 └── json/{collection_name}/{document_id}.json
 ```
 
@@ -1904,6 +2260,20 @@ EMBEDDING_DIM=512
 CLUSTER_THRESHOLD=0.72
 MAX_IMAGE_SIZE=1024
 VIDEO_KEYFRAMES=3
+OCR_ENABLED=true
+OCR_TEXT_HEURISTIC_THRESHOLD=0.65
+
+# Document Processing
+TEXT_EMBEDDING_MODEL=gte-base
+DOC_CHUNK_SIZE=900
+DOC_CHUNK_OVERLAP=150
+FOLDER_INGESTION_ENABLED=false  # Future enhancement flag
+
+# Audio Processing
+TRANSCRIPTION_MODEL=faster-whisper-large-v3
+AUDIO_SEGMENT_SECONDS=30
+AUDIO_SPEECH_CONFIDENCE=0.55
+AUDIO_SPECTROGRAM_IMAGE_SIZE=512
 
 # VLM Configuration
 GEMINI_API_KEY=  # Required for VLM analysis
@@ -1918,6 +2288,13 @@ SCHEMA_STABILITY_THRESHOLD=0.6
 SCHEMA_MAX_TOP_LEVEL_KEYS=20
 SCHEMA_MAX_DEPTH=2
 AUTO_MIGRATE=false
+
+# Knowledge Organization
+KNOWLEDGE_TREE_ENABLED=true
+KNOWLEDGE_TREE_REFRESH_INTERVAL_MINUTES=10
+KNOWLEDGE_GUARDRAIL_THRESHOLD=0.72
+LLM_PROVIDER=gemini  # or openai, anthropic
+LLM_MODEL_NAME=gemini-2.5-flash
 
 # Security
 API_KEY=  # Optional
@@ -1945,6 +2322,7 @@ TRACING_ENABLED=false
 - [ ] Job queue (in-process)
 - [ ] Lineage tracking
 - [ ] Status endpoint
+- [ ] Recursive folder ingestion (`folder_uri`) expansion _(Future Enhancement)_
 
 ### Phase 3: Media Processing
 - [ ] Media classification
@@ -1954,8 +2332,25 @@ TRACING_ENABLED=false
 - [ ] Tag generation
 - [ ] Deduplication
 - [ ] Clustering
+- [ ] Text-in-image heuristic with OCR routing _(Critical Enhancement)_
+- [ ] OCR metadata propagation to document chunks _(Critical Enhancement)_
 
-### Phase 4: JSON Processing
+### Phase 4: Document & Text Processing _(Critical)_
+- [ ] Multi-format parsing via `unstructured`
+- [ ] Structure-aware chunking (headings, slides, code blocks)
+- [ ] Text embedding generation (768-d)
+- [ ] Embedded media extraction and routing
+- [ ] Section-level summarization & keyword extraction
+- [ ] Source map + lineage linking for chunks
+
+### Phase 5: Audio Intelligence _(Future Enhancement)_
+- [ ] VAD + speech vs non-speech heuristic
+- [ ] Faster-Whisper transcription pipeline
+- [ ] Transcript embedding generation
+- [ ] Spectrogram embeddings for music/ambient audio
+- [ ] Genre / mood classification metadata
+
+### Phase 6: JSON Processing
 - [ ] JSON parsing & validation
 - [ ] Structure flattening
 - [ ] SchemaDecider algorithm
@@ -1963,18 +2358,27 @@ TRACING_ENABLED=false
 - [ ] Schema proposal storage
 - [ ] SQL/JSONB materialization
 
-### Phase 5: Search & Retrieval
-- [ ] Query encoding
-- [ ] pgvector ANN search
-- [ ] Result formatting
-- [ ] Filtering
+### Phase 7: Multi-Modal Search & Retrieval _(Critical)_
+- [ ] Multi-vector query encoding (media + documents + audio)
+- [ ] Unified ANN search across `asset`, `document_chunk`, `audio_transcript`
+- [ ] Hybrid re-ranking (semantic + keyword)
+- [ ] Knowledge tree breadcrumb enrichment
+- [ ] Filter extensions (modality, author, hierarchy path)
 
-### Phase 6: Admin Operations
+### Phase 8: Semantic Knowledge Organization _(Critical)_
+- [ ] Similarity graph construction across modalities
+- [ ] LLM-driven node naming & summarization
+- [ ] Guardrail enforcement and approval workflow
+- [ ] Knowledge tree persistence (`knowledge_node`, `knowledge_edge`)
+- [ ] Change notifications for downstream systems
+
+### Phase 9: Admin Operations
 - [ ] Schema approval/rejection
 - [ ] Cluster management
 - [ ] Admin UI backend endpoints
+- [ ] Knowledge tree review tools _(Critical)_
 
-### Phase 7: Production Readiness
+### Phase 10: Production Readiness
 - [ ] Error handling & retries
 - [ ] Logging & monitoring
 - [ ] S3 storage backend
