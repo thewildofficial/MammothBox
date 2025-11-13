@@ -145,13 +145,23 @@ class IngestionOrchestrator:
             )
         
         # Create job record
+        # Calculate json_count: treat dict as 1 document, list as len(list) documents
+        json_count = 0
+        if validation_results["json"] and validation_results["json"].parsed_data:
+            parsed_data = validation_results["json"].parsed_data
+            if isinstance(parsed_data, dict):
+                json_count = 1
+            elif isinstance(parsed_data, list):
+                json_count = len(parsed_data)
+            # else remains 0
+        
         job_data = {
             "job_id": str(job_id),
             "request_id": request_id,
             "owner": owner,
             "comments": comments,
             "file_count": len(files) if files else 0,
-            "json_count": len(validation_results["json"].parsed_data) if validation_results["json"] and validation_results["json"].parsed_data else 0,
+            "json_count": json_count,
         }
         
         # Add file metadata if present

@@ -119,8 +119,8 @@ class IngestValidator:
             # Determine asset kind
             kind = self._determine_kind(content_type)
             
-            # Validate size based on kind
-            max_size = self._get_max_size_for_kind(kind)
+            # Validate size based on kind and content type
+            max_size = self._get_max_size_for_kind(kind, content_type)
             if size_bytes > max_size:
                 return FileValidationResult(
                     valid=False,
@@ -336,19 +336,26 @@ class IngestValidator:
         else:
             return AssetKind.UNKNOWN
     
-    def _get_max_size_for_kind(self, kind: AssetKind) -> int:
+    def _get_max_size_for_kind(self, kind: AssetKind, content_type: Optional[str] = None) -> int:
         """
         Get maximum file size for asset kind.
         
         Args:
             kind: AssetKind enum value
+            content_type: Optional MIME type for finer-grained limits
             
         Returns:
             Maximum size in bytes
         """
         if kind == AssetKind.MEDIA:
-            # Use video size as max (most restrictive)
-            return MAX_VIDEO_SIZE
+            if content_type and content_type in self.IMAGE_TYPES:
+                return MAX_IMAGE_SIZE
+            elif content_type and content_type in self.VIDEO_TYPES:
+                return MAX_VIDEO_SIZE
+            elif content_type and content_type in self.AUDIO_TYPES:
+                return MAX_AUDIO_SIZE
+            else:
+                return MAX_VIDEO_SIZE  # Default to largest for unknown media
         elif kind == AssetKind.JSON:
             return MAX_JSON_SIZE
         elif kind == AssetKind.DOCUMENT:

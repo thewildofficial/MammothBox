@@ -237,14 +237,16 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
         # Storage location - extract from URI if present
         if asset.uri:
             # URI format: "sql://table_name/hash" or "jsonb://collection_name/hash"
+            # After splitting "sql://table_name/hash" by "/", we get ["sql:", "", "table_name", "hash"]
+            # So parts[1] is empty and parts[2] is the table/collection name
             if asset.uri.startswith("sql://"):
                 parts = asset.uri.split("/")
-                if len(parts) >= 2:
-                    response["storage_location"] = parts[1]  # table name
+                if len(parts) >= 3:
+                    response["storage_location"] = parts[2]  # table name
             elif asset.uri.startswith("jsonb://"):
                 parts = asset.uri.split("/")
-                if len(parts) >= 2:
-                    response["storage_location"] = parts[1]  # collection name
+                if len(parts) >= 3:
+                    response["storage_location"] = parts[2]  # collection name
     
     return response
 
