@@ -73,3 +73,4 @@ temp/
 # Git ignore data and images in notebook folders (except notebooks/images/* which contains test images)
 notebooks/data/
 notebooks/videos/
+/notebooks/images

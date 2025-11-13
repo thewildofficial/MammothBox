@@ -1,15 +1,17 @@
 # API routes
 
 import json
-from uuid import uuid4
-from fastapi import APIRouter, UploadFile, File, Form, Query, Depends, HTTPException
+from uuid import uuid4, UUID
+from datetime import datetime
+from fastapi import APIRouter, UploadFile, File, Form, Query, Depends, HTTPException, status
 from typing import Optional, List
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.catalog.database import get_db
-from src.catalog.models import SchemaDef
-from src.ingest.json_processor import JsonProcessor, JsonProcessingError
+from src.catalog.models import SchemaDef, Job, Asset
+from src.queue.manager import get_queue_backend
+from src.queue.interface import QueueMessage
 
 router = APIRouter()
 
@@ -35,7 +37,7 @@ class SchemaResponse(BaseModel):
     decision_reason: Optional[str] = None
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED)
 def ingest(
     files: Optional[List[UploadFile]] = File(None),
     payload: Optional[str] = Form(None),
@@ -48,19 +50,17 @@ def ingest(
     """
     Unified ingestion endpoint for media files and JSON documents.
 
-    - **files**: Media files (images, videos, audio)
+    - **files**: Media files (images, videos, audio) - not yet implemented
     - **payload**: JSON object or array (as JSON string)
     - **owner**: Optional owner identifier
     - **comments**: Optional metadata/comments (used as hint for schema generation)
     - **idempotency_key**: Optional idempotency key for deduplication
     - **collection_name**: Optional hint for collection/table name
 
-    Returns:
-        - **job_id**: Unique identifier for this ingestion request
-        - **system_ids**: List of created asset IDs
-        - **status**: Processing status
+    Returns 202 Accepted immediately with job_id for async processing.
     """
     request_id = idempotency_key or str(uuid4())
+    job_id = uuid4()
 
     # For now, only handle JSON payloads (media processing is separate)
     if not payload:
@@ -84,20 +84,42 @@ def ingest(
                 detail="Payload must be a JSON object or array"
             )
 
-        # Process JSON documents
-        processor = JsonProcessor(db)
-        result = processor.process_documents(
-            documents=documents,
+        # Create job record (assets will be created during processing)
+        job = Job(
+            id=job_id,
             request_id=request_id,
-            owner=owner,
-            collection_name_hint=collection_name or comments
+            job_type="json",
+            status="queued",
+            job_data={
+                "job_id": str(job_id),  # Include for processor to update asset_ids
+                "documents": documents,
+                "request_id": request_id,
+                "owner": owner,
+                "collection_name_hint": collection_name or comments
+            },
+            asset_ids=None  # Will be updated after processing
         )
+        db.add(job)
+        db.commit()
+
+        # Enqueue job
+        queue_backend = get_queue_backend()
+        queue_message = QueueMessage(
+            job_id=job_id,
+            job_type="json",
+            job_data=job.job_data,
+            priority=0,
+            retry_count=0,
+            max_retries=3,
+            created_at=datetime.utcnow()
+        )
+        queue_backend.enqueue(queue_message)
 
         return IngestResponse(
-            job_id=request_id,
-            system_ids=[str(aid) for aid in result["asset_ids"]],
-            status=result["status"],
-            message=f"Processed {len(documents)} documents. Storage: {result['storage_choice']}"
+            job_id=str(job_id),
+            system_ids=[],  # Will be populated after processing
+            status="accepted",
+            message=f"Job queued for processing {len(documents)} documents"
         )
 
     except json.JSONDecodeError as e:
@@ -105,12 +127,8 @@ def ingest(
             status_code=400,
             detail=f"Invalid JSON payload: {str(e)}"
         )
-    except JsonProcessingError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Processing error: {str(e)}"
-        )
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected error: {str(e)}"
@@ -118,17 +136,62 @@ def ingest(
 
 
 @router.get("/ingest/{job_id}/status")
-async def get_ingest_status(job_id: str):
-    """Get processing status for an ingestion job (Phase 2: Queue integration)"""
+def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
+    """
+    Get processing status for an ingestion job.
+    
+    Returns real-time status including per-asset progress.
+    """
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+    
+    # Query job
+    job = db.query(Job).filter(Job.id == job_uuid).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Query related assets
+    assets = []
+    if job.asset_ids:
+        assets = db.query(Asset).filter(Asset.id.in_(job.asset_ids)).all()
+    
+    # Calculate progress
+    status_counts = {"queued": 0, "processing": 0, "done": 0, "failed": 0}
+    asset_statuses = []
+    
+    for asset in assets:
+        status_counts[asset.status] = status_counts.get(asset.status, 0) + 1
+        asset_statuses.append({
+            "system_id": str(asset.id),
+            "status": asset.status,
+            "cluster_id": str(asset.cluster_id) if asset.cluster_id else None,
+            "schema_id": str(asset.schema_id) if asset.schema_id else None
+        })
+    
+    # Determine overall status
+    overall_status = job.status
+    if overall_status == "done" and status_counts["failed"] > 0:
+        overall_status = "partial"
+    elif overall_status == "queued" and status_counts["processing"] > 0:
+        overall_status = "processing"
+    
     return {
         "job_id": job_id,
-        "status": "queued",
+        "status": overall_status,
         "progress": {
-            "queued": 0,
-            "processing": 0,
-            "done": 0,
-            "failed": 0
-        }
+            "queued": status_counts["queued"],
+            "processing": status_counts["processing"],
+            "done": status_counts["done"],
+            "failed": status_counts["failed"],
+            "total": len(assets)
+        },
+        "assets": asset_statuses,
+        "created_at": job.created_at.isoformat(),
+        "updated_at": job.updated_at.isoformat(),
+        "dead_letter": job.dead_letter,
+        "error_message": job.error_message
     }
 
 

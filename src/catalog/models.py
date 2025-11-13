@@ -293,3 +293,73 @@ class VideoFrame(Base):
         Index('idx_video_frame_asset_id', 'asset_id'),
         Index('idx_video_frame_timestamp', 'timestamp_ms'),
     )
+
+
+class Job(Base):
+    """
+    Job queue tracking for async processing.
+
+    Tracks job status, retries, and dead-letter queue assignments
+    for background processing of media and JSON assets.
+    """
+    __tablename__ = "job"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4)
+    request_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True)
+    
+    # Job metadata
+    job_type: Mapped[str] = mapped_column(
+        SQLEnum('media', 'json', name='job_type'),
+        nullable=False,
+        index=True
+    )
+    status: Mapped[str] = mapped_column(
+        SQLEnum('queued', 'processing', 'done', 'failed', name='job_status'),
+        default='queued',
+        nullable=False,
+        index=True
+    )
+    
+    # Job payload (JSONB for flexibility)
+    job_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    
+    # Retry tracking
+    retry_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
+    max_retries: Mapped[int] = mapped_column(
+        Integer, default=3, nullable=False)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, index=True)
+    
+    # Dead-letter queue
+    dead_letter: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Related assets (for status tracking)
+    asset_ids: Mapped[Optional[List[UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=True)
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("job_type IN ('media', 'json')", name='job_type_check'),
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'done', 'failed')", name='job_status_check'),
+        Index('idx_job_request_id', 'request_id'),
+        Index('idx_job_status', 'status'),
+        Index('idx_job_type', 'job_type'),
+        Index('idx_job_dead_letter', 'dead_letter'),
+        Index('idx_job_next_retry_at', 'next_retry_at'),
+        Index('idx_job_created_at', 'created_at'),
+    )
