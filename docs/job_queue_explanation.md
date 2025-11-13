@@ -89,3 +89,4 @@ Sometimes jobs fail permanently (like corrupted files). Instead of losing them:
 - **Retry Count:** How many times to retry failed jobs (default: 3)
   - Each retry waits longer (exponential backoff: 1s, 2s, 4s)
 
+

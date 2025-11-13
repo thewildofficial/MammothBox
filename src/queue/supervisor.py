@@ -124,10 +124,20 @@ class WorkerSupervisor:
     
     def _preload_resources(self) -> None:
         """Preload shared resources like ML models."""
-        # Placeholder for CLIP model preloading
-        # This will be implemented when media processing is added
         logger.info("Preloading shared resources...")
-        # TODO: Load CLIP model when media processing is implemented
+        
+        # Preload CLIP model for media processing
+        try:
+            from src.media.embedder import MediaEmbedder
+            embedder = MediaEmbedder()
+            # Trigger model loading
+            embedder._load_model()
+            self._model_cache['clip_embedder'] = embedder
+            logger.info("CLIP model preloaded successfully")
+        except Exception as e:
+            logger.warning(f"Failed to preload CLIP model: {e}")
+            logger.warning("CLIP model will be loaded lazily on first use")
+        
         logger.info("Shared resources preloaded")
     
     def _worker_loop(self) -> None:

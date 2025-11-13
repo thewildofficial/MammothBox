@@ -95,12 +95,11 @@ class FilesystemStorage(StorageAdapter):
     def store_media(self, cluster_id: UUID, asset_id: UUID, file: BinaryIO, filename: str) -> str:
         """Store a processed media file in its cluster."""
         try:
-            # Create directory structure
-            target_dir = self.base_path / "media" / \
-                "clusters" / str(cluster_id) / str(asset_id)
+            # Create directory structure: media/clusters/{cluster_id}/
+            target_dir = self.base_path / "media" / "clusters" / str(cluster_id)
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            # Store file
+            # Store file: media/clusters/{cluster_id}/{asset_id}.ext
             target_path = target_dir / filename
             with open(target_path, 'wb') as f:
                 shutil.copyfileobj(file, f)
