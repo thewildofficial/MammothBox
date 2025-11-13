@@ -58,7 +58,7 @@ def ingest(
     - **collection_name**: Optional hint for collection/table name (deprecated, use comments)
 
     Returns 202 Accepted immediately with job_id for async processing.
-    
+
     Supports:
     - Single or batch media files
     - Single or batch JSON documents
@@ -73,14 +73,14 @@ def ingest(
             comments=comments or collection_name,  # Support both for backward compat
             idempotency_key=idempotency_key
         )
-        
+
         return IngestResponse(
             job_id=result["job_id"],
             system_ids=result["system_ids"],
             status=result["status"],
             message=f"Job {result['job_id']} accepted for processing"
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -95,28 +95,28 @@ def ingest(
 def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
     """
     Get processing status for an ingestion job.
-    
+
     Returns real-time status including per-asset progress.
     """
     try:
         job_uuid = UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
+
     # Query job
     job = db.query(Job).filter(Job.id == job_uuid).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     # Query related assets
     assets = []
     if job.asset_ids:
         assets = db.query(Asset).filter(Asset.id.in_(job.asset_ids)).all()
-    
+
     # Calculate progress
     status_counts = {"queued": 0, "processing": 0, "done": 0, "failed": 0}
     asset_statuses = []
-    
+
     for asset in assets:
         # Use .get() with default to handle unexpected status values gracefully
         status_counts[asset.status] = status_counts.get(asset.status, 0) + 1
@@ -126,14 +126,14 @@ def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
             "cluster_id": str(asset.cluster_id) if asset.cluster_id else None,
             "schema_id": str(asset.schema_id) if asset.schema_id else None
         })
-    
+
     # Determine overall status
     overall_status = job.status
     if overall_status == "done" and status_counts["failed"] > 0:
         overall_status = "partial"
     elif overall_status == "queued" and status_counts["processing"] > 0:
         overall_status = "processing"
-    
+
     return {
         "job_id": job_id,
         "status": overall_status,
@@ -156,7 +156,7 @@ def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
 def get_object(system_id: str, db: Session = Depends(get_db)):
     """
     Get canonical metadata for an asset by system ID.
-    
+
     Returns complete asset metadata including:
     - Basic info (id, kind, uri, size, etc.)
     - Processing status
@@ -168,17 +168,18 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
         asset_uuid = UUID(system_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid system ID format")
-    
+
     # Query asset
     asset = db.query(Asset).filter(Asset.id == asset_uuid).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
-    
+
     # Build response based on asset kind
     response = {
         "id": str(asset.id),
         "kind": asset.kind,
-        "uri": asset.uri if asset.uri and not asset.uri.startswith("json://pending") else None,  # Hide placeholder URIs
+        # Hide placeholder URIs
+        "uri": asset.uri if asset.uri and not asset.uri.startswith("json://pending") else None,
         "content_type": asset.content_type,
         "size_bytes": asset.size_bytes,
         "sha256": asset.sha256,
@@ -187,7 +188,7 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
         "updated_at": asset.updated_at.isoformat(),
         "status": asset.status,
     }
-    
+
     # Add kind-specific fields
     if asset.kind == "media":
         # Media-specific fields
@@ -196,20 +197,22 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
             "dimension": 512 if asset.embedding else None,
             "model": "clip-ViT-B-32" if asset.embedding else None
         }
-        
+
         # Cluster info
         if asset.cluster_id:
-            cluster = db.query(Cluster).filter(Cluster.id == asset.cluster_id).first()
+            cluster = db.query(Cluster).filter(
+                Cluster.id == asset.cluster_id).first()
             if cluster:
                 response["cluster"] = {
                     "id": str(cluster.id),
                     "name": cluster.name,
                     "provisional": cluster.provisional
                 }
-        
+
         # Raw asset info
         if asset.raw_asset_id:
-            raw_asset = db.query(AssetRaw).filter(AssetRaw.id == asset.raw_asset_id).first()
+            raw_asset = db.query(AssetRaw).filter(
+                AssetRaw.id == asset.raw_asset_id).first()
             if raw_asset:
                 response["raw_asset"] = {
                     "id": str(raw_asset.id),
@@ -217,15 +220,16 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
                     "request_id": raw_asset.request_id,
                     "part_id": raw_asset.part_id
                 }
-        
+
         # Metadata (stored as JSONB) - not in model yet, skip for now
         # if hasattr(asset, 'metadata') and asset.metadata:
         #     response["metadata"] = asset.metadata
-    
+
     elif asset.kind == "json":
         # JSON-specific fields
         if asset.schema_id:
-            schema = db.query(SchemaDef).filter(SchemaDef.id == asset.schema_id).first()
+            schema = db.query(SchemaDef).filter(
+                SchemaDef.id == asset.schema_id).first()
             if schema:
                 response["schema"] = {
                     "id": str(schema.id),
@@ -234,7 +238,7 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
                     "status": schema.status,
                     "ddl": schema.ddl
                 }
-        
+
         # Storage location - extract from URI if present
         if asset.uri:
             # URI format: "sql://table_name/hash" or "jsonb://collection_name/hash"
@@ -248,7 +252,7 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
                 parts = asset.uri.split("/")
                 if len(parts) >= 3:
                     response["storage_location"] = parts[2]  # collection name
-    
+
     return response
 
 
@@ -406,6 +410,120 @@ def reject_schema(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to reject schema: {str(e)}")
+
+
+@router.get("/search", response_model=dict, status_code=status.HTTP_200_OK)
+def search_assets(
+    query: str = Query(..., description="Search text query"),
+    type: Optional[str] = Query(
+        None, description="Filter by asset type: 'media' or 'json'"),
+    limit: int = Query(10, ge=1, le=100, description="Max results (1-100)"),
+    threshold: float = Query(
+        0.5, ge=0.0, le=1.0, description="Min similarity score (0.0-1.0)"),
+    owner: Optional[str] = Query(None, description="Filter by owner"),
+    cluster_id: Optional[str] = Query(
+        None, description="Filter by cluster ID"),
+    tags: Optional[str] = Query(
+        None, description="Filter by tags (comma-separated)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Semantic search for assets using CLIP embeddings.
+
+    Performs text-to-image/video search by encoding the query text
+    and finding assets with similar embeddings using pgvector ANN search.
+
+    **Query Parameters:**
+    - **query** (required): Text search query
+    - **type**: Filter by 'media' or 'json'
+    - **limit**: Max results (default: 10, max: 100)
+    - **threshold**: Min similarity score (default: 0.5, range: 0.0-1.0)
+    - **owner**: Filter by owner
+    - **cluster_id**: Filter by cluster UUID
+    - **tags**: Comma-separated tags (e.g., "cat,animal")
+
+    **Returns:**
+    - **query**: Original query text
+    - **results**: Array of matching assets with similarity scores
+    - **total**: Number of results
+    - **query_time_ms**: Query execution time in milliseconds
+    - **filters_applied**: Summary of applied filters
+
+    **Example:**
+    ```
+    GET /api/v1/search?query=sunset&type=media&threshold=0.7&limit=20
+    ```
+    """
+    from src.catalog.queries import QueryProcessor, SearchFilter, QueryError
+    from uuid import UUID
+
+    try:
+        # Parse tags
+        tag_list = None
+        if tags:
+            tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+
+        # Parse cluster_id
+        cluster_uuid = None
+        if cluster_id:
+            try:
+                cluster_uuid = UUID(cluster_id)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid cluster_id format. Must be a valid UUID."
+                )
+
+        # Build search filters
+        filters = SearchFilter(
+            asset_type=type,
+            owner=owner,
+            cluster_id=cluster_uuid,
+            tags=tag_list,
+            min_similarity=threshold,
+            limit=limit
+        )
+
+        # Execute search
+        processor = QueryProcessor()
+        response = processor.search(db, query, filters)
+
+        # Format response
+        return {
+            "query": response.query,
+            "results": [
+                {
+                    "id": r.asset_id,
+                    "kind": r.kind,
+                    "uri": r.uri,
+                    "content_type": r.content_type,
+                    "size_bytes": r.size_bytes,
+                    "owner": r.owner,
+                    "tags": r.tags,
+                    "similarity_score": r.similarity_score,
+                    "cluster": {
+                        "id": r.cluster_id,
+                        "name": r.cluster_name
+                    } if r.cluster_id else None,
+                    "thumbnail_uri": r.thumbnail_uri,
+                    "created_at": r.created_at,
+                    "metadata": r.metadata
+                }
+                for r in response.results
+            ],
+            "total": response.total,
+            "query_time_ms": response.query_time_ms,
+            "filters_applied": response.filters_applied
+        }
+
+    except QueryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Search endpoint error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Search failed: {str(e)}"
+        )
 
 
 @router.patch("/clusters/{cluster_id}")
