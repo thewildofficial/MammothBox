@@ -63,7 +63,8 @@
    - ✅ Falls back to mean pooling if attention fails
    - ✅ Aligns with notebook research
 
-7. **Semantic Search & Retrieval System** ✅ **(Phase 7 - Nov 14, 2025)**
+7. **Semantic Search & Retrieval System** ✅
+
    - ✅ Search endpoint `GET /api/v1/search`
    - ✅ CLIP text encoder for query embedding (512-d vectors)
    - ✅ pgvector cosine similarity with HNSW indexes
@@ -75,40 +76,46 @@
    - **Tests:** `tests/unit/test_search.py` (28/28 passing)
    - **Closed:** Issue #9
 
+8. **VLM-Based Tag Generation & Metadata Extraction** ✅
+   - ✅ Gemini 2.5 Flash integration with structured JSON output
+   - ✅ Individual image analysis (metadata extraction)
+   - ✅ Efficient cluster-first labeling (from notebooks)
+   - ✅ CLIP zero-shot fallback when VLM unavailable
+   - ✅ Rich metadata: tags, categories, descriptions, objects, colors
+   - ✅ Human-readable cluster names
+   - ✅ Automatic metadata storage in asset.metadata JSONB
+   - ✅ Batch cluster labeling endpoint
+   - ✅ 20 passing unit tests
+   - **Files:** `src/media/vlm_analyzer.py` (437 lines), `src/media/service.py`
+   - **Tests:** `tests/unit/test_vlm_analyzer.py` (20/20 passing)
+   - **Closed:** Issue #7
+   - **Features:**
+     - Individual image VLM analysis: 5-15 tags, primary category, scene type, color palette, detected objects
+     - Cluster labeling: Analyzes 3-5 representative images per cluster for efficient naming
+     - Fallback: CLIP zero-shot classification with 10 predefined categories
+     - Processing time: < 2s per image with VLM (configurable timeout)
+
 ---
 
 ### ⚠️ Partially Implemented
 
-7. **Video Keyframe Extraction**
+9. **Video Keyframe Extraction**
 
    - ✅ Basic temporal spacing
    - ❌ Frame diversity filtering (histogram-based)
    - **Status:** Basic implementation works, enhancement needed
 
-8. **Cluster Naming**
-   - ✅ Generic names ("Cluster {hash}")
-   - ❌ VLM-based cluster labeling
-   - **Status:** Functional but not user-friendly
-
 ---
 
 ### ❌ Not Implemented
 
-8. **Frame Diversity Filtering**
+10. **Frame Diversity Filtering**
 
-   - ❌ HSV histogram comparison
-   - ❌ Bhattacharyya distance filtering
-   - **Issue Created:** #22
+- ❌ HSV histogram comparison
+- ❌ Bhattacharyya distance filtering
+- **Issue Created:** #22
 
-9. **VLM Cluster Labeling (Cluster-First)**
-
-   - ❌ Cluster-first labeling approach
-   - ❌ Representative image selection
-   - ❌ Gemini API integration for cluster names
-   - **Issue Created:** #23
-   - **Note:** Issue #7 exists but uses per-image approach (less efficient)
-
-10. **Database Optimizations**
+11. **Database Optimizations**
     - ✅ HNSW indexes created (Phase 1)
     - ⚠️ pgvector extension setup (deployment-dependent)
     - ❌ GIN index on metadata
@@ -121,11 +128,11 @@
 
 ### `clip_vector_feasibility.ipynb`
 
-| Feature              | Status                 |
-| -------------------- | ---------------------- |
-| CLIP embeddings      | ✅ Implemented         |
-| Clustering           | ✅ Implemented         |
-| VLM cluster labeling | ❌ Missing (Issue #23) |
+| Feature              | Status                                        |
+| -------------------- | --------------------------------------------- |
+| CLIP embeddings      | ✅ Implemented                                |
+| Clustering           | ✅ Implemented                                |
+| VLM cluster labeling | ✅ **Implemented** (Phase 5, Issue #7 closed) |
 
 ### `unified_media_clustering.ipynb`
 
@@ -150,25 +157,31 @@
 
 ## GitHub Issues Status
 
-1. **Issue #9:** Phase 7: Search & Retrieval System
+1. **Issue #7:** Phase 5: VLM-Based Tag Generation & Metadata Extraction
+
+   - ✅ **STATUS:** COMPLETED (Nov 14, 2025)
+   - **Implementation:** Gemini 2.5 Flash integration with individual + cluster labeling
+
+2. **Issue #9:** Phase 7: Search & Retrieval System
 
    - ✅ **STATUS:** COMPLETED (Nov 14, 2025)
    - **Commit:** 9fcdf04
    - **Implementation:** Full semantic search with CLIP + pgvector
 
-2. **Issue #21:** Enhancement: Attention-Weighted Pooling for Video Embeddings
+3. **Issue #21:** Enhancement: Attention-Weighted Pooling for Video Embeddings
 
    - ✅ **STATUS:** COMPLETED
 
-3. **Issue #22:** Enhancement: Frame Diversity Filtering for Video Keyframes
+4. **Issue #22:** Enhancement: Frame Diversity Filtering for Video Keyframes
 
    - ⚠️ **STATUS:** PENDING
 
-4. **Issue #23:** Enhancement: VLM-Based Cluster Labeling (Cluster-First Approach)
+5. **Issue #23:** Enhancement: VLM-Based Cluster Labeling (Cluster-First Approach)
 
-   - ⚠️ **STATUS:** PENDING
+   - ✅ **STATUS:** COMPLETED (Included in Issue #7)
+   - **Note:** Efficient cluster-first approach from notebooks implemented
 
-5. **Issue #24:** Phase 7.5: Database Optimizations & pgvector Setup
+6. **Issue #24:** Phase 7.5: Database Optimizations & pgvector Setup
    - ⚠️ **STATUS:** PENDING (HNSW indexes already created in Phase 1)
 
 ---
@@ -204,10 +217,7 @@
 
 1. ✅ **Attention-Weighted Pooling** - DONE
 2. ✅ **Semantic Search Endpoint** - Issue #9 CLOSED (Phase 7 complete)
-
-### High Priority (Remaining)
-
-3. ⚠️ **VLM Cluster Labeling** - Issue #23 (improves UX)
+3. ✅ **VLM Tag Generation & Cluster Labeling** - Issue #7 CLOSED (Phase 5 complete)
 
 ### Medium Priority (Quality)
 
@@ -228,9 +238,9 @@
 2. ✅ Implement attention-weighted pooling - DONE
 3. ✅ Create GitHub issues - DONE
 4. ✅ Implement semantic search endpoint (Issue #9) - DONE
-5. ⚠️ Implement VLM cluster labeling (Issue #23) - HIGH PRIORITY
-6. ⚠️ Implement frame diversity filtering (Issue #22)
-7. ⚠️ Database optimization automation (Issue #24)
+5. ✅ Implement VLM tag generation & cluster labeling (Issue #7) - DONE
+6. ⚠️ Implement frame diversity filtering (Issue #22) - REMAINING
+7. ⚠️ Database optimization automation (Issue #24) - REMAINING
 
 ---
 
@@ -238,11 +248,15 @@
 
 **Core Implementation:** ✅ Complete  
 **Search & Retrieval:** ✅ Complete (Phase 7)  
+**VLM Integration:** ✅ Complete (Phase 5)  
 **Advanced Features:** ⚠️ Partially Complete  
 **Missing Features:** ✅ Identified & Tracked
 
-The media processing pipeline core is **fully functional** with **semantic search capabilities** now live. Advanced features from notebooks have been identified and issues created. Attention-weighted pooling has been implemented to align with research findings.
+The media processing pipeline is **fully functional** with **semantic search** and **VLM-powered metadata extraction** now live. Advanced features from notebooks have been identified, and most critical features have been implemented. Attention-weighted pooling has been implemented to align with research findings.
 
-**Latest Completion:** Phase 7 (Search & Retrieval System) - Full semantic search with CLIP text encoding, pgvector similarity search, HNSW indexes, and comprehensive filtering (28/28 tests passing).
+**Latest Completions:**
 
-**Recommendation:** Implement VLM cluster labeling (Issue #23) for improved user experience, then proceed with frame diversity filtering and database optimization.
+- **Phase 5** (VLM Tag Generation) - Gemini 2.5 Flash integration with individual image analysis, efficient cluster-first labeling, CLIP fallback, and rich metadata extraction (20/20 tests passing)
+- **Phase 7** (Search & Retrieval) - Full semantic search with CLIP text encoding, pgvector similarity search, HNSW indexes, and comprehensive filtering (28/28 tests passing)
+
+**Recommendation:** Implement frame diversity filtering (Issue #22) for higher quality video keyframes, then proceed with database optimization automation (Issue #24).
