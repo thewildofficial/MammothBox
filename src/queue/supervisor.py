@@ -165,7 +165,8 @@ class WorkerSupervisor:
         job_id = message.job_id
         logger.info(f"{worker_name} processing job {job_id} (type: {message.job_type})")
         
-        # Update job status in database
+        # Use a single database session for the entire job processing operation
+        # to avoid race conditions and ensure data consistency
         with get_db_session() as db:
             job = db.query(Job).filter(Job.id == job_id).first()
             if not job:
@@ -177,53 +178,64 @@ class WorkerSupervisor:
             job.status = "processing"
             job.started_at = datetime.utcnow()
             db.commit()
-        
-        try:
-            # Get processor for this job type
-            processor = self.processors.get(message.job_type)
-            if not processor:
-                raise ValueError(f"No processor registered for job type: {message.job_type}")
             
-            # Process job
-            with get_db_session() as db:
+            try:
+                # Get processor for this job type
+                processor = self.processors.get(message.job_type)
+                if not processor:
+                    raise ValueError(f"No processor registered for job type: {message.job_type}")
+                
+                # Process job (using the same session)
                 result = processor.process(message.job_data, db)
-            
-            # Update job status to done
-            with get_db_session() as db:
+                
+                # Re-query job after processing (processor may have committed, detaching the object)
                 job = db.query(Job).filter(Job.id == job_id).first()
-                if job:
-                    job.status = "done"
+                if not job:
+                    logger.error(f"Job {job_id} not found after processing")
+                    self.queue.ack(job_id)
+                    return
+                
+                # Update job status to done
+                job.status = "done"
+                job.completed_at = datetime.utcnow()
+                db.commit()
+                
+                # Acknowledge job
+                self.queue.ack(job_id)
+                logger.info(f"{worker_name} completed job {job_id}")
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"{worker_name} failed to process job {job_id}: {error_msg}", exc_info=True)
+                
+                # Re-query job from database to ensure we have latest state
+                # (refresh doesn't work if job was created in a different session)
+                job = db.query(Job).filter(Job.id == job_id).first()
+                if not job:
+                    logger.error(f"Job {job_id} not found in database during error handling")
+                    self.queue.nack(job_id, error_msg)
+                    return
+                
+                job.error_message = error_msg
+                
+                # Negative acknowledge (queue will increment retry_count and handle retry logic)
+                self.queue.nack(job_id, error_msg)
+                
+                # After nack, sync the queue's incremented retry_count back to database
+                # The queue increments message.retry_count, so we use that value
+                job.retry_count = message.retry_count
+                
+                # Check if max retries exceeded (using the queue's incremented value)
+                if job.retry_count >= job.max_retries:
+                    job.status = "failed"
+                    job.dead_letter = True
                     job.completed_at = datetime.utcnow()
-                    db.commit()
-            
-            # Acknowledge job
-            self.queue.ack(job_id)
-            logger.info(f"{worker_name} completed job {job_id}")
-            
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"{worker_name} failed to process job {job_id}: {error_msg}", exc_info=True)
-            
-            # Update job status
-            with get_db_session() as db:
-                job = db.query(Job).filter(Job.id == job_id).first()
-                if job:
-                    job.retry_count = message.retry_count + 1
-                    job.error_message = error_msg
-                    
-                    # Check if max retries exceeded
-                    if job.retry_count >= job.max_retries:
-                        job.status = "failed"
-                        job.dead_letter = True
-                        job.completed_at = datetime.utcnow()
-                    else:
-                        # Schedule retry with exponential backoff
-                        backoff_seconds = 2 ** job.retry_count
-                        job.next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
-                        job.status = "queued"
-                    
-                    db.commit()
-            
-            # Negative acknowledge (will handle retry logic)
-            self.queue.nack(job_id, error_msg)
+                else:
+                    # Schedule retry with exponential backoff
+                    # Use retry_count - 1 for backoff since queue already incremented it
+                    backoff_seconds = 2 ** (job.retry_count - 1)
+                    job.next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
+                    job.status = "queued"
+                
+                db.commit()
 

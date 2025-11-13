@@ -9,7 +9,7 @@ import uvicorn
 
 from src.config.settings import get_settings
 from src.api.routes import router
-from src.queue.manager import get_queue_backend, set_worker_supervisor
+from src.queue.manager import get_queue_backend, set_worker_supervisor, reset_queue_backend
 from src.queue.supervisor import WorkerSupervisor
 from src.queue.processors import JsonJobProcessor, MediaJobProcessor
 
@@ -46,6 +46,8 @@ async def lifespan(app: FastAPI):
     logger.info("Stopping worker supervisor...")
     supervisor.stop()
     queue_backend.close()
+    # Reset the singleton so subsequent get_queue_backend() calls create a fresh backend
+    reset_queue_backend()
     logger.info("Worker supervisor stopped")
 
 

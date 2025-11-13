@@ -70,7 +70,8 @@ temp/
 *.tmp
 
 
-# Git ignore data and images in notebook folders (except notebooks/images/* which contains test images)
+# Git ignore data and videos in notebook folders (keep notebooks/images/ which contains test images)
 notebooks/data/
 notebooks/videos/
+# Note: notebooks/images/ is intentionally NOT ignored to preserve test images
 /notebooks/images

@@ -283,26 +283,47 @@ class TestQueueStress:
         
         queue.enqueue(message)
         
-        # Dequeue and nack multiple times
+        # Dequeue and nack multiple times, waiting for backoff windows
         retry_times = []
-        for attempt in range(3):
-            dequeued = queue.dequeue(timeout=1.0)
+        dequeued = None
+        
+        for attempt in range(message.max_retries - 1):
+            # Wait for the scheduled retry time if this is not the first attempt
+            if attempt > 0 and dequeued and dequeued.next_retry_at:
+                wait_until = dequeued.next_retry_at
+                wait_seconds = (wait_until - datetime.utcnow()).total_seconds()
+                if wait_seconds > 0:
+                    # Add small slack to ensure the retry time has passed
+                    time.sleep(wait_seconds + 0.1)
+            
+            # Compute timeout based on next_retry_at if available, otherwise use default
+            timeout = 5.0
+            if attempt > 0 and dequeued and dequeued.next_retry_at:
+                timeout = max(5.0, (dequeued.next_retry_at - datetime.utcnow()).total_seconds() + 1.0)
+            
+            dequeued = queue.dequeue(timeout=timeout)
             assert dequeued is not None, f"Failed to dequeue on attempt {attempt + 1}"
             
-            if attempt < 2:  # Don't nack on last attempt
-                before_nack = time.time()
-                queue.nack(job_id, f"Test error {attempt + 1}")
-                
-                # Check retry delay
-                if dequeued.next_retry_at:
-                    delay = (dequeued.next_retry_at - datetime.utcnow()).total_seconds()
-                    retry_times.append(delay)
-                    print(f"Attempt {attempt + 1}: Retry delay = {delay:.2f}s")
+            # Nack to trigger retry (except on final attempt which will go to DLQ)
+            queue.nack(job_id, f"Test error {attempt + 1}")
+            
+            # Collect retry delay from the dequeued message
+            if dequeued.next_retry_at:
+                delay = (dequeued.next_retry_at - datetime.utcnow()).total_seconds()
+                retry_times.append(delay)
+                print(f"Attempt {attempt + 1}: Retry delay = {delay:.2f}s")
         
-        # Final nack should move to DLQ
-        dequeued = queue.dequeue(timeout=1.0)
-        if dequeued:
-            queue.nack(job_id, "Final error")
+        # Final dequeue and nack should move to DLQ
+        # Wait for the last scheduled retry time
+        if dequeued and dequeued.next_retry_at:
+            wait_until = dequeued.next_retry_at
+            wait_seconds = (wait_until - datetime.utcnow()).total_seconds()
+            if wait_seconds > 0:
+                time.sleep(wait_seconds + 0.1)
+        
+        dequeued = queue.dequeue(timeout=5.0)
+        assert dequeued is not None, "Expected final dequeue after exhausting retries"
+        queue.nack(job_id, "Final error")
         
         assert queue.get_dlq_size() == 1, "Job should be in dead-letter queue"
         assert len(retry_times) == 2, f"Expected 2 retry delays, got {len(retry_times)}"
@@ -409,7 +430,7 @@ class TestQueueStress:
         
         avg_latency = statistics.mean(latencies)
         p95_latency = StressTestResults._percentile(latencies, 95)
-        p99_latency = StressTestResults._percentile(latencies, 95)
+        p99_latency = StressTestResults._percentile(latencies, 99)
         
         print(f"Average Latency: {avg_latency:.3f}ms")
         print(f"P95 Latency: {p95_latency:.3f}ms")

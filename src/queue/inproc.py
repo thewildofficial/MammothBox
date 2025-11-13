@@ -113,11 +113,16 @@ class InProcessQueue(QueueBackend):
             message = self._processing[job_id]
             del self._processing[job_id]
             
-            # Check if we should retry
+            # Increment retry count first, then check if we should retry
+            # This ensures the queue and DB remain aligned (no extra retry)
+            message.retry_count += 1
+            
+            # Check if we should retry after incrementing
             if message.retry_count < message.max_retries:
-                # Exponential backoff: 2^retry_count seconds
-                backoff_seconds = 2 ** message.retry_count
-                message.retry_count += 1
+                # Exponential backoff: 2^(retry_count-1) seconds
+                # Since retry_count is already incremented (e.g., 1, 2, 3),
+                # we use retry_count-1 to get the correct backoff (2^0=1, 2^1=2, 2^2=4)
+                backoff_seconds = 2 ** (message.retry_count - 1)
                 message.next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
                 
                 # Re-enqueue with updated retry info

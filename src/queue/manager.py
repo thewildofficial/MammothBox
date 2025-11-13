@@ -33,3 +33,9 @@ def set_worker_supervisor(supervisor: WorkerSupervisor) -> None:
     global _worker_supervisor
     _worker_supervisor = supervisor
 
+
+def reset_queue_backend() -> None:
+    """Reset the global queue backend instance (e.g., after closing)."""
+    global _queue_backend
+    _queue_backend = None
+

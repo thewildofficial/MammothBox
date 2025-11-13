@@ -100,9 +100,10 @@ def ingest(
             asset_ids=None  # Will be updated after processing
         )
         db.add(job)
-        db.commit()
-
-        # Enqueue job
+        # Flush to get the job ID but don't commit yet
+        db.flush()
+        
+        # Build queue message from in-memory job data
         queue_backend = get_queue_backend()
         queue_message = QueueMessage(
             job_id=job_id,
@@ -113,7 +114,19 @@ def ingest(
             max_retries=3,
             created_at=datetime.utcnow()
         )
-        queue_backend.enqueue(queue_message)
+        
+        # Enqueue job before committing to avoid orphan jobs if enqueue fails
+        # If enqueue fails, the transaction will rollback
+        try:
+            queue_backend.enqueue(queue_message)
+            # Only commit after successful enqueue
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to enqueue job: {str(e)}"
+            )
 
         return IngestResponse(
             job_id=str(job_id),
@@ -162,6 +175,7 @@ def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
     asset_statuses = []
     
     for asset in assets:
+        # Use .get() with default to handle unexpected status values gracefully
         status_counts[asset.status] = status_counts.get(asset.status, 0) + 1
         asset_statuses.append({
             "system_id": str(asset.id),
