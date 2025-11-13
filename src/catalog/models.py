@@ -141,7 +141,7 @@ class Cluster(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     centroid = Column(Vector(512), nullable=True)
     threshold: Mapped[float] = mapped_column(
-        Float, default=0.8, nullable=False)
+        Float, default=0.72, nullable=False)  # Default per spec
     provisional: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

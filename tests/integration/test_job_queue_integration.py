@@ -142,3 +142,4 @@ class TestJobQueueIntegration:
         dlq_messages = queue_backend.get_dlq_messages()
         assert job_id in dlq_messages
 
+

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.catalog.database import get_db
 from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Cluster
 from src.ingest.orchestrator import IngestionOrchestrator
+from src.ingest.json_processor import JsonProcessor, JsonProcessingError
 
 router = APIRouter()
 

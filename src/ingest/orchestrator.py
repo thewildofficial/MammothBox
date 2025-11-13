@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from src.catalog.models import AssetRaw, Asset, Job, Lineage
 from src.ingest.validator import IngestValidator, FileValidationResult, JsonValidationResult
-from src.storage.manager import get_storage_adapter
+from src.storage.factory import get_storage_adapter
 from src.queue.manager import get_queue_backend
 from src.queue.interface import QueueMessage
 
