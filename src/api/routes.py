@@ -12,6 +12,7 @@ from src.catalog.database import get_db
 from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Cluster
 from src.ingest.orchestrator import IngestionOrchestrator
 from src.ingest.json_processor import JsonProcessor, JsonProcessingError
+from src.admin.handlers import AdminHandlers, AdminError
 
 router = APIRouter()
 
@@ -526,12 +527,401 @@ def search_assets(
         )
 
 
+# ==================== Admin Operations (Phase 8) ====================
+
+# Schema Management Endpoints
+
+@router.get("/api/v1/admin/schemas")
+def list_schemas(
+    status: Optional[str] = Query(
+        None, description="Filter by status (provisional, active, rejected)"),
+    storage_choice: Optional[str] = Query(
+        None, description="Filter by storage choice (sql, jsonb)"),
+    db: Session = Depends(get_db)
+):
+    """
+    List all schema proposals with filtering.
+
+    Admin endpoint for reviewing schema proposals.
+    """
+    try:
+        admin = AdminHandlers(db)
+        schemas = admin.list_schemas(
+            status=status, storage_choice=storage_choice)
+        return {"schemas": schemas, "count": len(schemas)}
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list schemas: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list schemas: {str(e)}")
+
+
+@router.get("/api/v1/admin/schemas/pending")
+def get_pending_schemas(db: Session = Depends(get_db)):
+    """
+    Get all provisional schemas awaiting review.
+
+    Convenience endpoint for admin dashboard.
+    """
+    try:
+        admin = AdminHandlers(db)
+        schemas = admin.get_pending_schemas()
+        return {"schemas": schemas, "count": len(schemas)}
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get pending schemas: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get pending schemas: {str(e)}")
+
+
+@router.get("/api/v1/admin/schemas/{schema_id}")
+def get_schema(schema_id: UUID, db: Session = Depends(get_db)):
+    """
+    Get detailed schema information.
+    """
+    try:
+        admin = AdminHandlers(db)
+        schema = admin.get_schema(schema_id)
+        return schema
+    except AdminError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get schema: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get schema: {str(e)}")
+
+
+class SchemaApprovalRequest(BaseModel):
+    reviewed_by: str
+    table_name: Optional[str] = None
+
+
+@router.post("/api/v1/admin/schemas/{schema_id}/approve")
+def approve_schema(
+    schema_id: UUID,
+    request: SchemaApprovalRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Approve a provisional schema and execute DDL migration.
+
+    This will:
+    - Mark schema as active
+    - Execute DDL to create tables
+    - Migrate assets from JSONB to SQL tables
+    """
+    try:
+        admin = AdminHandlers(db)
+        schema = admin.approve_schema(
+            schema_id=schema_id,
+            reviewed_by=request.reviewed_by,
+            table_name=request.table_name
+        )
+        return {
+            "status": "approved",
+            "schema": schema,
+            "message": f"Schema '{schema['name']}' approved and DDL executed"
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to approve schema: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to approve schema: {str(e)}")
+
+
+class SchemaRejectionRequest(BaseModel):
+    reviewed_by: str
+    reason: str
+
+
+@router.post("/api/v1/admin/schemas/{schema_id}/reject")
+def reject_schema(
+    schema_id: UUID,
+    request: SchemaRejectionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reject a provisional schema.
+
+    This will mark the schema as rejected and trigger re-analysis
+    with updated hints.
+    """
+    try:
+        admin = AdminHandlers(db)
+        schema = admin.reject_schema(
+            schema_id=schema_id,
+            reviewed_by=request.reviewed_by,
+            reason=request.reason
+        )
+        return {
+            "status": "rejected",
+            "schema": schema,
+            "message": f"Schema '{schema['name']}' rejected"
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to reject schema: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to reject schema: {str(e)}")
+
+
+# Cluster Management Endpoints
+
+@router.get("/api/v1/admin/clusters")
+def list_clusters(
+    provisional_only: bool = Query(
+        False, description="Only return provisional clusters"),
+    min_assets: Optional[int] = Query(
+        None, description="Minimum asset count filter"),
+    db: Session = Depends(get_db)
+):
+    """
+    List all clusters with statistics.
+
+    Admin endpoint for reviewing and managing clusters.
+    """
+    try:
+        admin = AdminHandlers(db)
+        clusters = admin.list_clusters(
+            provisional_only=provisional_only,
+            min_assets=min_assets
+        )
+        return {"clusters": clusters, "count": len(clusters)}
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list clusters: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list clusters: {str(e)}")
+
+
+@router.get("/api/v1/admin/clusters/statistics")
+def get_cluster_statistics(db: Session = Depends(get_db)):
+    """
+    Get overall cluster statistics.
+
+    Provides dashboard metrics for cluster health.
+    """
+    try:
+        admin = AdminHandlers(db)
+        stats = admin.get_cluster_statistics()
+        return stats
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get cluster statistics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get cluster statistics: {str(e)}")
+
+
+@router.get("/api/v1/admin/clusters/merge-candidates")
+def get_merge_candidates(
+    similarity_threshold: float = Query(
+        0.85, description="Minimum centroid similarity"),
+    db: Session = Depends(get_db)
+):
+    """
+    Identify cluster pairs that could be merged.
+
+    Analyzes centroid similarities to suggest potential merges.
+    """
+    try:
+        admin = AdminHandlers(db)
+        candidates = admin.identify_merge_candidates(
+            similarity_threshold=similarity_threshold)
+
+        return {
+            "candidates": [
+                {
+                    "cluster1": c1,
+                    "cluster2": c2,
+                    "similarity": sim
+                }
+                for c1, c2, sim in candidates
+            ],
+            "count": len(candidates)
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            f"Failed to identify merge candidates: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to identify merge candidates: {str(e)}")
+
+
+@router.get("/api/v1/admin/clusters/{cluster_id}")
+def get_cluster(cluster_id: UUID, db: Session = Depends(get_db)):
+    """
+    Get detailed cluster information with statistics.
+    """
+    try:
+        admin = AdminHandlers(db)
+        cluster = admin.get_cluster(cluster_id)
+        return cluster
+    except AdminError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get cluster: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get cluster: {str(e)}")
+
+
+class ClusterRenameRequest(BaseModel):
+    new_name: str
+    performed_by: str
+
+
+@router.post("/api/v1/admin/clusters/{cluster_id}/rename")
+def rename_cluster(
+    cluster_id: UUID,
+    request: ClusterRenameRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Rename a cluster.
+    """
+    try:
+        admin = AdminHandlers(db)
+        cluster = admin.rename_cluster(
+            cluster_id=cluster_id,
+            new_name=request.new_name,
+            performed_by=request.performed_by
+        )
+        return {
+            "status": "renamed",
+            "cluster": cluster,
+            "message": f"Cluster renamed to '{request.new_name}'"
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to rename cluster: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to rename cluster: {str(e)}")
+
+
+class ClusterMergeRequest(BaseModel):
+    source_cluster_ids: List[UUID]
+    performed_by: str
+
+
+@router.post("/api/v1/admin/clusters/{target_cluster_id}/merge")
+def merge_clusters(
+    target_cluster_id: UUID,
+    request: ClusterMergeRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Merge multiple clusters into target cluster.
+
+    This will:
+    - Move all assets from source clusters to target
+    - Recompute target centroid
+    - Delete source clusters
+    """
+    try:
+        admin = AdminHandlers(db)
+        cluster = admin.merge_clusters(
+            source_cluster_ids=request.source_cluster_ids,
+            target_cluster_id=target_cluster_id,
+            performed_by=request.performed_by
+        )
+        return {
+            "status": "merged",
+            "cluster": cluster,
+            "message": f"Merged {len(request.source_cluster_ids)} clusters into target"
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to merge clusters: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to merge clusters: {str(e)}")
+
+
+class ClusterThresholdRequest(BaseModel):
+    threshold: float
+    performed_by: str
+    re_evaluate: bool = False
+
+
+@router.post("/api/v1/admin/clusters/{cluster_id}/threshold")
+def update_cluster_threshold(
+    cluster_id: UUID,
+    request: ClusterThresholdRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Update cluster similarity threshold.
+    """
+    try:
+        admin = AdminHandlers(db)
+        cluster = admin.update_cluster_threshold(
+            cluster_id=cluster_id,
+            threshold=request.threshold,
+            performed_by=request.performed_by,
+            re_evaluate=request.re_evaluate
+        )
+        return {
+            "status": "updated",
+            "cluster": cluster,
+            "message": f"Threshold updated to {request.threshold}"
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to update threshold: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update threshold: {str(e)}")
+
+
+class ClusterConfirmRequest(BaseModel):
+    performed_by: str
+
+
+@router.post("/api/v1/admin/clusters/{cluster_id}/confirm")
+def confirm_cluster(
+    cluster_id: UUID,
+    request: ClusterConfirmRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark cluster as confirmed (non-provisional).
+    """
+    try:
+        admin = AdminHandlers(db)
+        cluster = admin.confirm_cluster(
+            cluster_id=cluster_id,
+            performed_by=request.performed_by
+        )
+        return {
+            "status": "confirmed",
+            "cluster": cluster,
+            "message": f"Cluster '{cluster['name']}' confirmed"
+        }
+    except AdminError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to confirm cluster: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to confirm cluster: {str(e)}")
+
+
+# Legacy endpoint (deprecated)
 @router.patch("/clusters/{cluster_id}")
 async def update_cluster(cluster_id: str, action: dict):
     """
-    Admin operations on clusters (Phase 2: Media processing):
-    - Rename cluster
-    - Merge clusters
-    - Adjust thresholds
+    Admin operations on clusters (Phase 2: Media processing).
+
+    DEPRECATED: Use /api/v1/admin/clusters endpoints instead.
     """
-    return {"cluster_id": cluster_id, "status": "updated"}
+    return {
+        "cluster_id": cluster_id,
+        "status": "deprecated",
+        "message": "Use /api/v1/admin/clusters endpoints instead"
+    }

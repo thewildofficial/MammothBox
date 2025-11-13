@@ -77,6 +77,7 @@
    - **Closed:** Issue #9
 
 8. **VLM-Based Tag Generation & Metadata Extraction** ✅
+
    - ✅ Gemini 2.5 Flash integration with structured JSON output
    - ✅ Individual image analysis (metadata extraction)
    - ✅ Efficient cluster-first labeling (from notebooks)
@@ -95,21 +96,39 @@
      - Fallback: CLIP zero-shot classification with 10 predefined categories
      - Processing time: < 2s per image with VLM (configurable timeout)
 
+9. **Admin Operations & Schema Management** ✅
+   - ✅ Schema management REST endpoints (list, approve, reject)
+   - ✅ Cluster management REST endpoints (list, rename, merge, threshold)
+   - ✅ Cluster merge with centroid recomputation
+   - ✅ Merge candidate identification (similarity analysis)
+   - ✅ Cluster statistics and analytics
+   - ✅ Admin action logging to lineage table
+   - ✅ Metadata JSONB fields on Cluster and Asset models
+   - ✅ 22 comprehensive unit tests
+   - **Files:** `src/admin/handlers.py` (615 lines), `src/api/routes.py` (+400 lines)
+   - **Tests:** `tests/unit/test_admin_handlers.py` (22 tests)
+   - **Migration:** `migrations/versions/002_add_metadata.py`
+   - **Closed:** Issue #11
+   - **Endpoints:**
+     - Schema: GET/POST `/api/v1/admin/schemas`, `/schemas/{id}/approve`, `/schemas/{id}/reject`
+     - Cluster: GET `/api/v1/admin/clusters`, `/clusters/{id}/rename`, `/clusters/{id}/merge`
+     - Analytics: GET `/api/v1/admin/clusters/statistics`, `/clusters/merge-candidates`
+
 ---
 
 ### ⚠️ Partially Implemented
 
-9. **Video Keyframe Extraction**
+10. **Video Keyframe Extraction**
 
-   - ✅ Basic temporal spacing
-   - ❌ Frame diversity filtering (histogram-based)
-   - **Status:** Basic implementation works, enhancement needed
+- ✅ Basic temporal spacing
+- ❌ Frame diversity filtering (histogram-based)
+- **Status:** Basic implementation works, enhancement needed
 
 ---
 
 ### ❌ Not Implemented
 
-10. **Frame Diversity Filtering**
+11. **Frame Diversity Filtering**
 
 - ❌ HSV histogram comparison
 - ❌ Bhattacharyya distance filtering
@@ -168,20 +187,25 @@
    - **Commit:** 9fcdf04
    - **Implementation:** Full semantic search with CLIP + pgvector
 
-3. **Issue #21:** Enhancement: Attention-Weighted Pooling for Video Embeddings
+3. **Issue #11:** Phase 8: Admin Operations & Schema Management
+
+   - ✅ **STATUS:** COMPLETED (Nov 14, 2025)
+   - **Implementation:** Full admin handlers with schema approval, cluster management, merge functionality
+
+4. **Issue #21:** Enhancement: Attention-Weighted Pooling for Video Embeddings
 
    - ✅ **STATUS:** COMPLETED
 
-4. **Issue #22:** Enhancement: Frame Diversity Filtering for Video Keyframes
+5. **Issue #22:** Enhancement: Frame Diversity Filtering for Video Keyframes
 
    - ⚠️ **STATUS:** PENDING
 
-5. **Issue #23:** Enhancement: VLM-Based Cluster Labeling (Cluster-First Approach)
+6. **Issue #23:** Enhancement: VLM-Based Cluster Labeling (Cluster-First Approach)
 
    - ✅ **STATUS:** COMPLETED (Included in Issue #7)
    - **Note:** Efficient cluster-first approach from notebooks implemented
 
-6. **Issue #24:** Phase 7.5: Database Optimizations & pgvector Setup
+7. **Issue #24:** Phase 7.5: Database Optimizations & pgvector Setup
    - ⚠️ **STATUS:** PENDING (HNSW indexes already created in Phase 1)
 
 ---
@@ -258,5 +282,6 @@ The media processing pipeline is **fully functional** with **semantic search** a
 
 - **Phase 5** (VLM Tag Generation) - Gemini 2.5 Flash integration with individual image analysis, efficient cluster-first labeling, CLIP fallback, and rich metadata extraction (20/20 tests passing)
 - **Phase 7** (Search & Retrieval) - Full semantic search with CLIP text encoding, pgvector similarity search, HNSW indexes, and comprehensive filtering (28/28 tests passing)
+- **Phase 8** (Admin Operations) - Complete admin handlers with schema management, cluster operations, merge functionality, and analytics (22 tests created)
 
 **Recommendation:** Implement frame diversity filtering (Issue #22) for higher quality video keyframes, then proceed with database optimization automation (Issue #24).
