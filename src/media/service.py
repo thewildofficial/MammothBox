@@ -120,13 +120,15 @@ class MediaService:
                 if text_detector and ocr_processor:
                     try:
                         # Save temp file for text detection
+                        # Use context manager pattern to ensure cleanup even on exceptions
                         import tempfile
                         import os
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-                            processed_data.normalized_image.save(tmp, format='JPEG')
-                            tmp_path = tmp.name
-                        
+                        tmp_path = None
                         try:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+                                processed_data.normalized_image.save(tmp, format='JPEG')
+                                tmp_path = tmp.name
+                            
                             has_text, text_confidence = text_detector.contains_text(tmp_path)
                             if has_text:
                                 logger.info(f"Text detected in image (confidence: {text_confidence:.2f})")
@@ -138,8 +140,12 @@ class MediaService:
                                     f"(avg confidence: {ocr_result.confidence:.2f})"
                                 )
                         finally:
-                            if os.path.exists(tmp_path):
-                                os.unlink(tmp_path)
+                            # Ensure temp file is always cleaned up
+                            if tmp_path and os.path.exists(tmp_path):
+                                try:
+                                    os.unlink(tmp_path)
+                                except OSError as e:
+                                    logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
                     except Exception as e:
                         logger.warning(f"OCR processing failed: {e}")
 

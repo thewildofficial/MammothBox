@@ -5,6 +5,7 @@ Scans directories recursively, respects ignore patterns, and yields
 file metadata for batch ingestion workflows.
 """
 
+import fnmatch
 import logging
 import os
 from pathlib import Path
@@ -71,8 +72,8 @@ class FolderScanner:
         """
         Check if path matches any ignore patterns.
         
-        Uses simple substring matching for patterns. A path is ignored if
-        any pattern appears in the path string.
+        Uses fnmatch pattern matching (similar to gitignore) for more precise
+        pattern matching. Patterns are matched against the path string.
         
         Args:
             path: Path to check
@@ -82,7 +83,9 @@ class FolderScanner:
         """
         path_str = str(path)
         for pattern in self.ignore_patterns:
-            if pattern in path_str:
+            # Use fnmatch for gitignore-style pattern matching
+            # This prevents false positives from substring matches
+            if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, f"*{pattern}*"):
                 return True
         return False
     

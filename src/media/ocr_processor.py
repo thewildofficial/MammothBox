@@ -72,6 +72,67 @@ class OCRProcessor:
         self.language = language
         self.confidence_threshold = confidence_threshold
     
+    def _process_ocr_data(self, ocr_data: dict) -> OCRResult:
+        """
+        Process OCR data dictionary and extract text with bounding boxes.
+        
+        Common logic shared by extract_text and extract_text_from_pil.
+        
+        Args:
+            ocr_data: Dictionary from pytesseract.image_to_data()
+            
+        Returns:
+            OCRResult containing extracted text and metadata
+        """
+        confident_words = []
+        bounding_boxes = []
+        all_confidences = []
+        
+        for i, word in enumerate(ocr_data['text']):
+            word_stripped = word.strip()
+            confidence = ocr_data['conf'][i]
+            
+            # Skip empty words
+            if not word_stripped:
+                continue
+            
+            # Handle negative confidence: Tesseract returns -1 for unreliable detections
+            # Treat -1 as 0 for average calculation but exclude from confident words
+            if confidence < 0:
+                # Include as 0 in average calculation for accuracy
+                all_confidences.append(0.0)
+                continue
+            
+            all_confidences.append(confidence)
+            
+            if confidence >= self.confidence_threshold:
+                confident_words.append(word_stripped)
+                
+                # Create bounding box
+                bbox = BoundingBox(
+                    word=word_stripped,
+                    x=ocr_data['left'][i],
+                    y=ocr_data['top'][i],
+                    width=ocr_data['width'][i],
+                    height=ocr_data['height'][i],
+                    confidence=float(confidence)
+                )
+                bounding_boxes.append(bbox)
+        
+        # Aggregate text
+        full_text = " ".join(confident_words)
+        
+        # Calculate average confidence
+        avg_confidence = float(np.mean(all_confidences)) if all_confidences else 0.0
+        
+        return OCRResult(
+            text=full_text,
+            confidence=avg_confidence,
+            bounding_boxes=bounding_boxes,
+            language=self.language,
+            word_count=len(confident_words)
+        )
+    
     def extract_text(self, image_path: str) -> OCRResult:
         """
         Extract text from image with bounding box metadata.
@@ -99,53 +160,15 @@ class OCRProcessor:
                 config='--psm 6'
             )
             
-            # Extract confident words and build bounding boxes
-            confident_words = []
-            bounding_boxes = []
-            all_confidences = []
-            
-            for i, word in enumerate(ocr_data['text']):
-                word_stripped = word.strip()
-                confidence = ocr_data['conf'][i]
-                
-                # Skip empty words and low-confidence detections
-                if not word_stripped or confidence < 0:
-                    continue
-                
-                all_confidences.append(confidence)
-                
-                if confidence >= self.confidence_threshold:
-                    confident_words.append(word_stripped)
-                    
-                    # Create bounding box
-                    bbox = BoundingBox(
-                        word=word_stripped,
-                        x=ocr_data['left'][i],
-                        y=ocr_data['top'][i],
-                        width=ocr_data['width'][i],
-                        height=ocr_data['height'][i],
-                        confidence=float(confidence)
-                    )
-                    bounding_boxes.append(bbox)
-            
-            # Aggregate text
-            full_text = " ".join(confident_words)
-            
-            # Calculate average confidence
-            avg_confidence = float(np.mean(all_confidences)) if all_confidences else 0.0
+            # Process OCR data using shared logic
+            result = self._process_ocr_data(ocr_data)
             
             logger.info(
-                f"OCR extracted {len(confident_words)} words "
-                f"(avg confidence: {avg_confidence:.2f})"
+                f"OCR extracted {result.word_count} words "
+                f"(avg confidence: {result.confidence:.2f})"
             )
             
-            return OCRResult(
-                text=full_text,
-                confidence=avg_confidence,
-                bounding_boxes=bounding_boxes,
-                language=self.language,
-                word_count=len(confident_words)
-            )
+            return result
             
         except Exception as e:
             logger.error(f"OCR extraction failed for {image_path}: {e}")
@@ -170,43 +193,8 @@ class OCRProcessor:
                 config='--psm 6'
             )
             
-            # Extract confident words and build bounding boxes
-            confident_words = []
-            bounding_boxes = []
-            all_confidences = []
-            
-            for i, word in enumerate(ocr_data['text']):
-                word_stripped = word.strip()
-                confidence = ocr_data['conf'][i]
-                
-                if not word_stripped or confidence < 0:
-                    continue
-                
-                all_confidences.append(confidence)
-                
-                if confidence >= self.confidence_threshold:
-                    confident_words.append(word_stripped)
-                    
-                    bbox = BoundingBox(
-                        word=word_stripped,
-                        x=ocr_data['left'][i],
-                        y=ocr_data['top'][i],
-                        width=ocr_data['width'][i],
-                        height=ocr_data['height'][i],
-                        confidence=float(confidence)
-                    )
-                    bounding_boxes.append(bbox)
-            
-            full_text = " ".join(confident_words)
-            avg_confidence = float(np.mean(all_confidences)) if all_confidences else 0.0
-            
-            return OCRResult(
-                text=full_text,
-                confidence=avg_confidence,
-                bounding_boxes=bounding_boxes,
-                language=self.language,
-                word_count=len(confident_words)
-            )
+            # Process OCR data using shared logic
+            return self._process_ocr_data(ocr_data)
             
         except Exception as e:
             logger.error(f"OCR extraction from PIL image failed: {e}")
