@@ -17,7 +17,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from src.catalog.models import AssetRaw, Asset, Job, Lineage
-from src.ingest.validator import IngestValidator, FileValidationResult, JsonValidationResult
+from src.ingest.validator import (
+    IngestValidator,
+    FileValidationResult,
+    JsonValidationResult,
+    AssetKind,
+)
 from src.storage.factory import get_storage_adapter
 from src.queue.manager import get_queue_backend
 from src.queue.interface import QueueMessage
@@ -363,17 +368,25 @@ class IngestionOrchestrator:
                 )
                 self.db.add(asset_raw)
                 
+                asset_kind = "media"
+                if validation_result.kind == AssetKind.DOCUMENT:
+                    asset_kind = "document"
+                
                 # Create Asset record (placeholder, will be updated by processor)
                 asset = Asset(
                     id=asset_id,
-                    kind="media",
+                    kind=asset_kind,
                     uri=uri,
                     sha256=validation_result.sha256,
                     content_type=validation_result.content_type,
                     size_bytes=validation_result.size_bytes,
                     owner=owner,
                     status="queued",
-                    raw_asset_id=asset_raw.id
+                    raw_asset_id=asset_raw.id,
+                    metadata={
+                        "original_filename": filename,
+                        "content_type": validation_result.content_type,
+                    },
                 )
                 self.db.add(asset)
                 asset_ids.append(asset_id)

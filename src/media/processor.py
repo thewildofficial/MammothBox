@@ -391,10 +391,12 @@ class MediaProcessor:
                 codec = video_stream.get('codec_name') if video_stream else None
                 bitrate = int(probe['format'].get('bit_rate', 0)) if probe['format'].get('bit_rate') else None
                 
-                # Extract keyframes
+                # Extract keyframes (sample extra for diversity filtering)
                 max_keyframes = self.settings.video_keyframes
-                keyframe_data = self.extract_video_keyframes(tmp_path, max_keyframes)
+                candidate_count = max(max_keyframes * 2, max_keyframes)
+                keyframe_data = self.extract_video_keyframes(tmp_path, candidate_count)
                 keyframes = [frame for frame, _ in keyframe_data]
+                keyframes = self.filter_diverse_frames(keyframes, max_keyframes)
                 
                 if not keyframes:
                     raise MediaProcessingError("Failed to extract any keyframes")
@@ -496,6 +498,51 @@ class MediaProcessor:
                     
         except Exception as e:
             raise MediaProcessingError(f"Failed to process audio: {e}") from e
+    
+    def filter_diverse_frames(
+        self,
+        frames: List[Image.Image],
+        target_count: int,
+    ) -> List[Image.Image]:
+        """
+        Select a subset of frames that maximize visual diversity.
+        
+        Uses HSV histograms with Bhattacharyya distance to measure similarity.
+        """
+        if target_count <= 0 or len(frames) <= target_count:
+            return frames
+        
+        histograms = []
+        for frame in frames:
+            hsv = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2HSV)
+            hist = cv2.calcHist([hsv], [0, 1, 2], None, [8, 8, 8], [0, 180, 0, 256, 0, 256])
+            hist = cv2.normalize(hist, hist).flatten()
+            histograms.append(hist)
+        
+        selected_indices = [0]
+        while len(selected_indices) < target_count and len(selected_indices) < len(frames):
+            max_min_distance = -1.0
+            best_candidate = None
+            
+            for idx, hist in enumerate(histograms):
+                if idx in selected_indices:
+                    continue
+                
+                min_distance = min(
+                    cv2.compareHist(hist, histograms[selected], cv2.HISTCMP_BHATTACHARYYA)
+                    for selected in selected_indices
+                )
+                
+                if min_distance > max_min_distance:
+                    max_min_distance = min_distance
+                    best_candidate = idx
+            
+            if best_candidate is None:
+                break
+            selected_indices.append(best_candidate)
+        
+        selected_indices.sort()
+        return [frames[i] for i in selected_indices]
     
     def _create_waveform_image(self, audio_data: np.ndarray, width: int = 800, height: int = 200) -> Image.Image:
         """Create a simple waveform visualization."""

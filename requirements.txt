@@ -19,11 +19,17 @@ imagehash==4.3.1
 ffmpeg-python==0.2.0
 pytesseract==0.3.13  # OCR for text detection in images
 
+## Document Processing
+unstructured==0.18.18
+langchain-text-splitters==0.3.11
+pdfminer.six==20231228
+python-docx==1.1.2
+
 ## ML/Embeddings (CPU-friendly)
 sentence-transformers==3.3.1
 transformers==4.53.0
 torch==2.8.0
-onnxruntime==1.19.2
+onnxruntime==1.23.2
 open-clip-torch==2.29.0
 
 ## Vision Language Model (VLM)

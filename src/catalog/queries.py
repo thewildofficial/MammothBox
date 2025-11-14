@@ -19,7 +19,8 @@ import numpy as np
 from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
 
-from src.catalog.models import Asset, Cluster
+from src.catalog.models import Asset, Cluster, DocumentChunk
+from src.documents.embedder import DocumentEmbedder, DocumentEmbeddingError
 from src.media.embedder import MediaEmbedder, EmbeddingError
 from src.config.settings import get_settings
 
@@ -68,7 +69,7 @@ class QueryError(Exception):
 @dataclass
 class SearchFilter:
     """Search filter parameters."""
-    asset_type: Optional[str] = None  # 'media' or 'json'
+    asset_type: Optional[str] = None  # 'media', 'document', or 'json'
     owner: Optional[str] = None
     cluster_id: Optional[UUID] = None
     tags: Optional[List[str]] = None
@@ -116,12 +117,19 @@ class QueryProcessor:
         """Initialize query processor."""
         self.settings = get_settings()
         self._embedder = None
+        self._doc_embedder = None
 
     def _get_embedder(self) -> MediaEmbedder:
         """Lazy load embedder (for text encoding)."""
         if self._embedder is None:
             self._embedder = MediaEmbedder()
         return self._embedder
+
+    def _get_document_embedder(self) -> DocumentEmbedder:
+        """Lazy load document encoder."""
+        if self._doc_embedder is None:
+            self._doc_embedder = DocumentEmbedder(self.settings.text_embedding_model)
+        return self._doc_embedder
 
     def validate_query(self, query: str) -> str:
         """
@@ -197,6 +205,17 @@ class QueryProcessor:
             logger.error(f"Query encoding error: {e}")
             raise QueryError(f"Failed to encode query: {e}") from e
 
+    def encode_document_query(self, query: str) -> np.ndarray:
+        """Encode text query for document chunk search."""
+        try:
+            embedder = self._get_document_embedder()
+            return embedder.embed_query(query)
+        except DocumentEmbeddingError as e:
+            raise QueryError(f"Failed to encode document query: {e}") from e
+        except Exception as e:
+            logger.error(f"Document query encoding error: {e}")
+            raise QueryError(f"Failed to encode document query: {e}") from e
+
     def build_search_filters(
         self,
         asset_type: Optional[str] = None,
@@ -223,9 +242,9 @@ class QueryProcessor:
 
         # Asset type filter
         if asset_type:
-            if asset_type not in ['media', 'json']:
+            if asset_type not in ['media', 'json', 'document']:
                 raise QueryError(
-                    f"Invalid asset type: {asset_type}. Must be 'media' or 'json'")
+                    f"Invalid asset type: {asset_type}. Must be 'media', 'document', or 'json'")
             filters.append(Asset.kind == asset_type)
 
         # Owner filter
@@ -378,6 +397,142 @@ class QueryProcessor:
         except Exception as e:
             logger.error(f"Search error: {e}", exc_info=True)
             raise QueryError(f"Search failed: {e}") from e
+
+    @log_query_time
+    def unified_search(
+        self,
+        db: Session,
+        query: str,
+        filters: SearchFilter,
+    ) -> SearchResponse:
+        """Search across media assets and document chunks."""
+        start_time = time.time()
+        normalized_query = self.validate_query(query)
+        combined_results: List[SearchResult] = []
+
+        # Media (CLIP) search
+        if filters.asset_type in (None, "media"):
+            media_response = self.search(db, normalized_query, filters)
+            combined_results.extend(media_response.results)
+
+        # Document chunk search
+        if filters.asset_type in (None, "document"):
+            doc_embedding = self.encode_document_query(normalized_query)
+            similarity_expr = (
+                1 - (DocumentChunk.embedding.cosine_distance(doc_embedding) / 2)
+            ).label("similarity")
+
+            chunk_query = (
+                db.query(DocumentChunk, Asset, similarity_expr)
+                .join(Asset, Asset.id == DocumentChunk.asset_id)
+                .filter(DocumentChunk.embedding.isnot(None))
+            )
+
+            if filters.owner:
+                chunk_query = chunk_query.filter(Asset.owner == filters.owner)
+
+            max_distance = 2 * (1 - filters.min_similarity)
+            chunk_query = chunk_query.filter(
+                DocumentChunk.embedding.cosine_distance(doc_embedding) <= max_distance
+            )
+
+            chunk_query = chunk_query.order_by(desc("similarity")).limit(filters.limit)
+            chunk_rows = chunk_query.all()
+
+            for chunk, asset, similarity in chunk_rows:
+                metadata = dict(asset.metadata) if asset.metadata else {}
+                metadata.update(
+                    {
+                        "chunk_text": chunk.text,
+                        "chunk_parent_heading": chunk.parent_heading,
+                        "chunk_page_number": chunk.page_number,
+                        "source_asset_id": str(asset.id),
+                    }
+                )
+
+                combined_results.append(
+                    SearchResult(
+                        asset_id=str(chunk.id),
+                        kind="document_chunk",
+                        uri=asset.uri,
+                        content_type=asset.content_type,
+                        size_bytes=asset.size_bytes,
+                        owner=asset.owner,
+                        tags=asset.tags or [],
+                        similarity_score=round(float(similarity), 4),
+                        cluster_id=None,
+                        cluster_name=None,
+                        thumbnail_uri=None,
+                        created_at=asset.created_at.isoformat(),
+                        metadata=metadata,
+                    )
+                )
+
+        sorted_results = sorted(
+            combined_results, key=lambda r: r.similarity_score, reverse=True
+        )[: filters.limit]
+
+        total_time_ms = (time.time() - start_time) * 1000
+        return SearchResponse(
+            query=normalized_query,
+            results=sorted_results,
+            total=len(sorted_results),
+            query_time_ms=round(total_time_ms, 2),
+            filters_applied={
+                "type": filters.asset_type,
+                "owner": filters.owner,
+                "cluster_id": str(filters.cluster_id) if filters.cluster_id else None,
+                "tags": filters.tags,
+                "min_similarity": filters.min_similarity,
+                "limit": filters.limit,
+            },
+        )
+
+    @log_query_time
+    def search_in_document_images(
+        self,
+        db: Session,
+        query: str,
+        document_id: UUID,
+        limit: int = 10,
+    ) -> List[SearchResult]:
+        """Search media assets derived from a specific document."""
+        normalized_query = self.validate_query(query)
+        query_embedding = self.encode_text_query(normalized_query)
+
+        similarity_expr = (
+            1 - (Asset.embedding.cosine_distance(query_embedding) / 2)
+        ).label("similarity")
+
+        query_obj = (
+            db.query(Asset, similarity_expr)
+            .filter(Asset.parent_asset_id == document_id)
+            .filter(Asset.embedding.isnot(None))
+            .order_by(desc("similarity"))
+            .limit(limit)
+        )
+
+        results = []
+        for asset, similarity in query_obj.all():
+            results.append(
+                SearchResult(
+                    asset_id=str(asset.id),
+                    kind=asset.kind,
+                    uri=asset.uri,
+                    content_type=asset.content_type,
+                    size_bytes=asset.size_bytes,
+                    owner=asset.owner,
+                    tags=asset.tags or [],
+                    similarity_score=round(float(similarity), 4),
+                    cluster_id=str(asset.cluster_id) if asset.cluster_id else None,
+                    cluster_name=None,
+                    thumbnail_uri=self._get_thumbnail_uri(asset),
+                    created_at=asset.created_at.isoformat(),
+                    metadata=asset.metadata,
+                )
+            )
+
+        return results
 
     def _get_thumbnail_uri(self, asset: Asset) -> Optional[str]:
         """

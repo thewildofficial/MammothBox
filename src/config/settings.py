@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     max_image_size: int = 1024
     video_keyframes: int = 3
 
+    # Document Processing
+    text_embedding_model: str = "all-MiniLM-L12-v2"
+    doc_chunk_size: int = 512
+    doc_chunk_overlap: int = 50
+
     # VLM Configuration (Gemini)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"  # or gemini-1.5-flash

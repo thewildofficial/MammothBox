@@ -7,6 +7,8 @@ This document covers the recently implemented features for database optimization
 1. [Database Optimizations](#database-optimizations)
 2. [OCR-Backed Image Text Detection](#ocr-backed-image-text-detection)
 3. [Recursive Folder Ingestion](#recursive-folder-ingestion)
+4. [Multi-Modal Document Pipeline](#multi-modal-document-pipeline)
+5. [Video Frame Diversity Filtering](#video-frame-diversity-filtering)
 
 ---
 
@@ -317,6 +319,63 @@ Or remove OCR dependencies to automatically disable.
 ---
 
 ## Recursive Folder Ingestion
+- ## Multi-Modal Document Pipeline
+
+### Overview
+
+Implements the Phase 4 document processing requirements from `docs/technical_specification.md` (§6). The new pipeline parses PDFs/DOCX files, chunks text with hierarchy awareness, generates 768-d embeddings, and stores searchable chunks in PostgreSQL.
+
+### Components
+
+1. **Document Parser**  
+   - `src/documents/parser.py` uses `unstructured` to normalize elements (title, headings, paragraphs) with metadata (page numbers, hierarchy).  
+   - `docs/technical_specification.md` §6.2 alignment.
+
+2. **Structure-Aware Chunker**  
+   - `src/documents/chunker.py` applies Markdown + recursive text splitters, preserving parent headings and page references.  
+   - Chunk sizing driven by `DOC_CHUNK_SIZE` / `DOC_CHUNK_OVERLAP` settings.
+
+3. **Text Embeddings**  
+   - `src/documents/embedder.py` wraps SentenceTransformers (`all-MiniLM-L12-v2`) for 768-d embeddings and query vectors.  
+   - `src/catalog/queries.py` adds `unified_search` blending media + document chunks.
+
+4. **Database Storage & Migration**  
+   - `migrations/versions/006_add_document_chunks.py` creates the `document_chunk` table with pgvector HNSW index plus `parent_asset_id` lineage column on `asset`.  
+   - `src/catalog/models.py` adds `DocumentChunk` ORM model and asset lineage relationships.
+
+5. **Document Service Orchestration**  
+   - `src/documents/service.py` parses, chunks, and embeds document assets, storing metadata + chunk counts.  
+   - Pipeline invoked automatically for assets with `kind='document'` via the queue processors.
+
+6. **Embedded Media Extraction**  
+   - `src/documents/media_extractor.py` gathers images from PDFs/DOCX (per §6.5).  
+   - Images are persisted as child assets with `parent_asset_id`, routed through `MediaService` for normalization/embedding.  
+   - `QueryProcessor.search_in_document_images()` supports cross-modal lookups like "diagram from design doc".
+
+7. **Unit Tests**  
+   - `tests/unit/test_document_processing.py` covers parser/chunker/embedder.  
+   - `tests/unit/test_embedded_media_extractor.py` validates PDF/DOCX extraction paths.
+
+- ## Video Frame Diversity Filtering
+
+### Overview
+
+Addresses Issue #22 / §5.4 of the technical specification by reducing redundant video keyframes before embedding.
+
+### Implementation
+
+1. **Diversity Filter**  
+   - `MediaProcessor.filter_diverse_frames()` scores HSV histograms with Bhattacharyya distance and greedily selects maximally diverse frames.
+
+2. **Process Integration**  
+   - `MediaProcessor.process_video()` now samples 2× the configured keyframes, filters down to the target count, and uses the diverse set for thumbnails + CLIP embeddings.
+
+3. **Unit Tests**  
+   - `tests/unit/test_frame_diversity.py` ensures the filter prefers visually distinct frames and gracefully handles small candidate pools.
+
+### Configuration
+
+Uses the existing `VIDEO_KEYFRAMES` setting (`src/config/settings.py`) to control the final frame count; no additional configuration required.
 
 ### Overview
 

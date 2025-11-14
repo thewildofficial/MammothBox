@@ -14,7 +14,7 @@ from sqlalchemy import (
     CheckConstraint, ForeignKey, Integer, JSON, Enum as SQLEnum, Index
 )
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column, synonym
 from pgvector.sqlalchemy import Vector
 
 
@@ -65,7 +65,7 @@ class Asset(Base):
     id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid4)
     kind: Mapped[str] = mapped_column(
-        SQLEnum('media', 'json', name='asset_kind'),
+        SQLEnum('media', 'json', 'document', name='asset_kind'),
         nullable=False
     )
     uri: Mapped[str] = mapped_column(Text, nullable=False)
@@ -76,6 +76,9 @@ class Asset(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     owner: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, index=True)
+    parent_asset_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("asset.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -102,7 +105,7 @@ class Asset(Base):
         UUID(as_uuid=True), ForeignKey("schema_def.id"), nullable=True, index=True)
 
     # Flexible metadata storage (EXIF, VLM results, admin notes, etc.)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
 
     # Reference to raw upload
     raw_asset_id: Mapped[Optional[UUID]] = mapped_column(
@@ -117,9 +120,17 @@ class Asset(Base):
         "SchemaDef", back_populates="assets")
     lineage_entries: Mapped[List["Lineage"]] = relationship(
         "Lineage", back_populates="asset")
-
+    parent: Mapped[Optional["Asset"]] = relationship(
+        "Asset", remote_side=[id], back_populates="children"
+    )
+    children: Mapped[List["Asset"]] = relationship(
+        "Asset", back_populates="parent", cascade="all, delete-orphan"
+    )
+    document_chunks: Mapped[List["DocumentChunk"]] = relationship(
+        "DocumentChunk", back_populates="asset", cascade="all, delete-orphan"
+    )
     __table_args__ = (
-        CheckConstraint("kind IN ('media', 'json')", name='asset_kind_check'),
+        CheckConstraint("kind IN ('media', 'json', 'document')", name='asset_kind_check'),
         CheckConstraint(
             "status IN ('queued', 'processing', 'done', 'failed')", name='asset_status_check'),
         Index('idx_asset_kind', 'kind'),
@@ -128,6 +139,9 @@ class Asset(Base):
         Index('idx_asset_sha256', 'sha256'),
         Index('idx_asset_tags', 'tags', postgresql_using='gin'),
     )
+
+
+Asset.metadata = synonym("metadata_json")
 
 
 class Cluster(Base):
@@ -147,8 +161,8 @@ class Cluster(Base):
         Float, default=0.72, nullable=False)  # Default per spec
     provisional: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False)
-    metadata: Mapped[Optional[dict]] = mapped_column(
-        JSON, nullable=True)  # VLM cluster info, admin notes
+    cluster_metadata_json: Mapped[Optional[dict]] = mapped_column(
+        "metadata", JSON, nullable=True)  # VLM cluster info, admin notes
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -162,6 +176,9 @@ class Cluster(Base):
         Index('idx_cluster_name', 'name'),
         Index('idx_cluster_provisional', 'provisional'),
     )
+
+
+Cluster.metadata = synonym("cluster_metadata_json")
 
 
 class SchemaDef(Base):
@@ -368,6 +385,35 @@ class Job(Base):
         Index('idx_job_dead_letter', 'dead_letter'),
         Index('idx_job_next_retry_at', 'next_retry_at'),
         Index('idx_job_created_at', 'created_at'),
+    )
+
+
+class DocumentChunk(Base):
+    """Text chunks extracted from document assets."""
+
+    __tablename__ = "document_chunk"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    asset_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("asset.id"), nullable=False, index=True
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_heading: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    element_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    embedding = Column(Vector(768), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    asset: Mapped["Asset"] = relationship("Asset", back_populates="document_chunks")
+
+    __table_args__ = (
+        Index("idx_document_chunk_asset_id", "asset_id"),
+        Index("idx_document_chunk_chunk_index", "chunk_index"),
     )
 
 
