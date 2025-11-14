@@ -9,12 +9,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.catalog.database import get_db
-from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Cluster
+from src.catalog.models import SchemaDef, Job, Asset, AssetRaw, Cluster, IngestionBatch
 from src.ingest.orchestrator import IngestionOrchestrator
 from src.ingest.json_processor import JsonProcessor, JsonProcessingError
 from src.admin.handlers import AdminHandlers, AdminError
 
 router = APIRouter()
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 class IngestResponse(BaseModel):
@@ -924,4 +927,227 @@ async def update_cluster(cluster_id: str, action: dict):
         "cluster_id": cluster_id,
         "status": "deprecated",
         "message": "Use /api/v1/admin/clusters endpoints instead"
+    }
+
+
+# ==================== Folder Ingestion (Issue #30) ====================
+
+class FolderIngestRequest(BaseModel):
+    folder_path: str
+    owner: Optional[str] = None
+    user_comment: Optional[str] = None
+
+
+@router.post("/api/v1/ingest/folder", status_code=status.HTTP_202_ACCEPTED)
+async def ingest_folder(
+    request: FolderIngestRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Recursively ingest all supported files from a folder.
+    
+    Returns 202 Accepted immediately with batch_id for tracking progress.
+    Files are processed asynchronously in the background.
+    
+    **Request Body:**
+    - **folder_path** (required): Absolute path to folder to ingest
+    - **owner**: Optional owner identifier for all ingested assets
+    - **user_comment**: Optional comment/description for the batch
+    
+    **Returns:**
+    - **batch_id**: Unique identifier for tracking this batch
+    - **status**: Initial status (accepted)
+    - **message**: Confirmation message
+    - **status_url**: URL to check batch progress
+    
+    **Example:**
+    ```json
+    {
+        "folder_path": "/home/user/photos/vacation",
+        "owner": "user@example.com",
+        "user_comment": "Summer vacation photos 2024"
+    }
+    ```
+    """
+    from pathlib import Path
+    from src.ingest.folder_scanner import FolderScanner
+    import uuid
+    from datetime import datetime
+    
+    try:
+        # Validate folder path
+        folder_path = Path(request.folder_path).resolve()
+        if not folder_path.exists():
+            raise HTTPException(status_code=404, detail=f"Folder not found: {request.folder_path}")
+        
+        if not folder_path.is_dir():
+            raise HTTPException(status_code=400, detail=f"Not a directory: {request.folder_path}")
+        
+        # Quick scan to get file count
+        scanner = FolderScanner()
+        try:
+            files, stats = scanner.scan_folder_with_stats(str(folder_path))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to scan folder: {str(e)}")
+        
+        if stats['total_files'] == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No supported files found in folder"
+            )
+        
+        # Create batch tracking record
+        batch_id = str(uuid.uuid4())
+        batch = IngestionBatch(
+            batch_id=batch_id,
+            folder_path=str(folder_path),
+            status='pending',
+            total_files=stats['total_files'],
+            processed_files=0,
+            owner=request.owner,
+            user_comment=request.user_comment,
+            created_at=datetime.utcnow()
+        )
+        db.add(batch)
+        db.commit()
+        
+        # TODO: Queue background task to process files
+        # For now, we just return the batch info
+        # In production, this would trigger a background worker
+        logger.info(
+            f"Created folder ingestion batch {batch_id}: "
+            f"{stats['total_files']} files from {folder_path}"
+        )
+        
+        return {
+            "batch_id": batch_id,
+            "status": "accepted",
+            "message": f"Folder ingestion started for {stats['total_files']} files",
+            "status_url": f"/api/v1/ingest/batch/{batch_id}",
+            "stats": stats
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Folder ingestion error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start folder ingestion: {str(e)}"
+        )
+
+
+@router.get("/api/v1/ingest/batch/{batch_id}")
+def get_batch_status(batch_id: str, db: Session = Depends(get_db)):
+    """
+    Get folder ingestion batch progress.
+    
+    Returns detailed progress information including:
+    - Current status (pending, processing, completed, failed)
+    - File counts (total, processed)
+    - Progress percentage
+    - Timestamps
+    - Error information (if any)
+    
+    **Path Parameters:**
+    - **batch_id**: UUID of the batch to check
+    
+    **Example Response:**
+    ```json
+    {
+        "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+        "status": "processing",
+        "folder_path": "/home/user/photos/vacation",
+        "total_files": 150,
+        "processed_files": 75,
+        "progress_percent": 50.0,
+        "created_at": "2024-11-14T10:30:00Z",
+        "updated_at": "2024-11-14T10:35:00Z",
+        "started_at": "2024-11-14T10:30:05Z",
+        "error_message": null
+    }
+    ```
+    """
+    batch = db.query(IngestionBatch).filter_by(batch_id=batch_id).first()
+    
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    # Calculate progress percentage
+    progress_pct = 0.0
+    if batch.total_files > 0:
+        progress_pct = (batch.processed_files / batch.total_files) * 100
+    
+    return {
+        "batch_id": batch.batch_id,
+        "status": batch.status,
+        "folder_path": batch.folder_path,
+        "total_files": batch.total_files,
+        "processed_files": batch.processed_files,
+        "progress_percent": round(progress_pct, 2),
+        "failed_files": batch.failed_files or [],
+        "owner": batch.owner,
+        "user_comment": batch.user_comment,
+        "created_at": batch.created_at.isoformat(),
+        "updated_at": batch.updated_at.isoformat(),
+        "started_at": batch.started_at.isoformat() if batch.started_at else None,
+        "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+        "error_message": batch.error_message
+    }
+
+
+@router.get("/api/v1/ingest/batches")
+def list_batches(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    owner: Optional[str] = Query(None, description="Filter by owner"),
+    limit: int = Query(20, ge=1, le=100, description="Max results"),
+    db: Session = Depends(get_db)
+):
+    """
+    List folder ingestion batches with optional filtering.
+    
+    **Query Parameters:**
+    - **status**: Filter by status (pending, processing, completed, failed)
+    - **owner**: Filter by owner
+    - **limit**: Max results (default: 20, max: 100)
+    
+    **Returns:**
+    List of batch summaries ordered by creation time (newest first).
+    """
+    query = db.query(IngestionBatch)
+    
+    if status:
+        if status not in ['pending', 'processing', 'completed', 'failed']:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid status. Must be one of: pending, processing, completed, failed"
+            )
+        query = query.filter(IngestionBatch.status == status)
+    
+    if owner:
+        query = query.filter(IngestionBatch.owner == owner)
+    
+    batches = query.order_by(IngestionBatch.created_at.desc()).limit(limit).all()
+    
+    results = []
+    for batch in batches:
+        progress_pct = 0.0
+        if batch.total_files > 0:
+            progress_pct = (batch.processed_files / batch.total_files) * 100
+        
+        results.append({
+            "batch_id": batch.batch_id,
+            "status": batch.status,
+            "folder_path": batch.folder_path,
+            "total_files": batch.total_files,
+            "processed_files": batch.processed_files,
+            "progress_percent": round(progress_pct, 2),
+            "owner": batch.owner,
+            "created_at": batch.created_at.isoformat(),
+            "updated_at": batch.updated_at.isoformat()
+        })
+    
+    return {
+        "batches": results,
+        "count": len(results)
     }

@@ -111,6 +111,37 @@ class MediaService:
                         logger.warning(f"VLM analysis failed: {e}")
                     except Exception as e:
                         logger.error(f"Unexpected VLM error: {e}")
+                
+                # Stage 2.6: OCR Text Detection (if image contains text)
+                ocr_result = None
+                text_detector = self.processor._get_text_detector()
+                ocr_processor = self.processor._get_ocr_processor()
+                
+                if text_detector and ocr_processor:
+                    try:
+                        # Save temp file for text detection
+                        import tempfile
+                        import os
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+                            processed_data.normalized_image.save(tmp, format='JPEG')
+                            tmp_path = tmp.name
+                        
+                        try:
+                            has_text, text_confidence = text_detector.contains_text(tmp_path)
+                            if has_text:
+                                logger.info(f"Text detected in image (confidence: {text_confidence:.2f})")
+                                ocr_result = ocr_processor.extract_text_from_pil(
+                                    processed_data.normalized_image
+                                )
+                                logger.info(
+                                    f"OCR extracted {ocr_result.word_count} words "
+                                    f"(avg confidence: {ocr_result.confidence:.2f})"
+                                )
+                        finally:
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
+                    except Exception as e:
+                        logger.warning(f"OCR processing failed: {e}")
 
             elif content_type.startswith('video/'):
                 processed_data = self.processor.process_video(
@@ -259,6 +290,26 @@ class MediaService:
                         "vlm_model": vlm_metadata.vlm_model,
                         "vlm_fallback_used": vlm_metadata.fallback_used,
                         "vlm_processing_time_ms": vlm_metadata.processing_time_ms
+                    })
+                
+                # Add OCR metadata if text was detected
+                if ocr_result:
+                    metadata.update({
+                        "ocr_text": ocr_result.text,
+                        "ocr_confidence": ocr_result.confidence,
+                        "ocr_word_count": ocr_result.word_count,
+                        "ocr_bounding_boxes": [
+                            {
+                                "word": bbox.word,
+                                "x": bbox.x,
+                                "y": bbox.y,
+                                "width": bbox.width,
+                                "height": bbox.height,
+                                "confidence": bbox.confidence
+                            }
+                            for bbox in ocr_result.bounding_boxes
+                        ],
+                        "contains_text": True
                     })
 
                 asset.metadata = metadata

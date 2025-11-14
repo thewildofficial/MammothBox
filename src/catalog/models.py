@@ -369,3 +369,62 @@ class Job(Base):
         Index('idx_job_next_retry_at', 'next_retry_at'),
         Index('idx_job_created_at', 'created_at'),
     )
+
+
+class IngestionBatch(Base):
+    """
+    Batch ingestion tracking for recursive folder uploads.
+    
+    Tracks progress of bulk folder ingestion operations, allowing
+    users to monitor status and troubleshoot failures.
+    """
+    __tablename__ = 'ingestion_batch'
+    
+    batch_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    
+    # Batch status tracking
+    status: Mapped[str] = mapped_column(
+        SQLEnum('pending', 'processing', 'completed', 'failed', name='batch_status'),
+        default='pending',
+        nullable=False,
+        index=True
+    )
+    
+    # Progress counters
+    total_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    
+    # Error tracking
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    failed_files: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String), nullable=True
+    )
+    
+    # Metadata
+    user_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name='batch_status_check'
+        ),
+        Index('idx_ingestion_batch_status', 'status'),
+        Index('idx_ingestion_batch_owner', 'owner'),
+        Index('idx_ingestion_batch_created_at', 'created_at'),
+    )

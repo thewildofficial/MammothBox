@@ -89,6 +89,10 @@ class MediaProcessor:
         """
         self.storage = storage
         self.settings = get_settings()
+        
+        # Lazy-loaded OCR components (only initialized if needed)
+        self._text_detector = None
+        self._ocr_processor = None
     
     def detect_mime_type(self, file_content: bytes, filename: str) -> str:
         """
@@ -164,6 +168,28 @@ class MediaProcessor:
                 )
         else:
             raise MediaProcessingError(f"Unsupported content type: {content_type}")
+    
+    def _get_text_detector(self):
+        """Lazy load text detector."""
+        if self._text_detector is None:
+            try:
+                from src.media.text_detector import TextInImageDetector
+                self._text_detector = TextInImageDetector()
+            except ImportError as e:
+                logger.warning(f"Text detector not available: {e}")
+                self._text_detector = False  # Mark as unavailable
+        return self._text_detector if self._text_detector is not False else None
+    
+    def _get_ocr_processor(self):
+        """Lazy load OCR processor."""
+        if self._ocr_processor is None:
+            try:
+                from src.media.ocr_processor import OCRProcessor
+                self._ocr_processor = OCRProcessor()
+            except ImportError as e:
+                logger.warning(f"OCR processor not available: {e}")
+                self._ocr_processor = False  # Mark as unavailable
+        return self._ocr_processor if self._ocr_processor is not False else None
     
     def extract_exif(self, image: Image.Image) -> Optional[Dict[str, Any]]:
         """

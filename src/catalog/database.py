@@ -10,18 +10,29 @@ from typing import Generator
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import QueuePool
 
 from src.config.settings import get_settings
 from src.catalog.models import Base
 
 settings = get_settings()
 
-# Create database engine
+# Create database engine with optimized connection pooling
+# QueuePool maintains a pool of connections for reuse, reducing connection overhead
+# pool_size: Number of connections maintained in the pool
+# max_overflow: Additional connections to create under high load
+# pool_pre_ping: Verify connections before use (prevents stale connection errors)
+# pool_recycle: Recycle connections after specified seconds (prevents long-lived connection issues)
+# echo_pool: Log pool checkouts/checkins for debugging (disabled in production)
 engine = create_engine(
     settings.database_url,
+    poolclass=QueuePool,
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
+    pool_pre_ping=True,
+    pool_recycle=3600,
     echo=settings.debug,
+    echo_pool=False,
     future=True
 )
 
