@@ -1,6 +1,6 @@
 # Configuration management
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings  # type: ignore
 from functools import lru_cache
 from typing import List, Optional
 
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     video_keyframes: int = 3
 
     # Document Processing
-    text_embedding_model: str = "all-MiniLM-L12-v2"
+    text_embedding_model: str = "sentence-transformers/all-mpnet-base-v2"
     doc_chunk_size: int = 512
     doc_chunk_overlap: int = 50
 

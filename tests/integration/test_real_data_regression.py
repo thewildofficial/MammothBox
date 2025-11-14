@@ -8,7 +8,7 @@ import os
 import shutil
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Optional, Generator
+from typing import Dict, Optional, Generator, Set
 from uuid import UUID, uuid4
 
 import pytest
@@ -28,7 +28,7 @@ from src.media.service import MediaService
 from src.storage.filesystem import FilesystemStorage
 
 REAL_DATA_ENV = "MAMMOTHBOX_REAL_DATA_DIR"
-DEFAULT_DATA_ROOT = Path.home() / "Downloads" / "MammothBoxRealData"
+DEFAULT_DATA_ROOT = Path.home() / "Downloads"
 DOCUMENT_EXTENSIONS = (".pdf", ".docx")
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv")
@@ -65,8 +65,8 @@ def real_data_paths() -> Dict[str, Optional[Path]]:
 
     if data_root is None:
         pytest.skip(
-            "Real dataset directory not found. Set MAMMOTHBOX_REAL_DATA_DIR to the folder"
-            " containing production-like documents/media (e.g., ~/Downloads/MammothBoxRealData)."
+            "Real dataset directory not found. Set MAMMOTHBOX_REAL_DATA_DIR to an alternate folder"
+            " or ensure ~/Downloads is accessible and contains sample documents/media."
         )
 
     def _pick(first_extensions: tuple[str, ...]) -> Optional[Path]:
@@ -179,24 +179,29 @@ def real_data_context(_ensure_schema, real_data_paths, tmp_path_factory):
         yield context
     finally:
         # Clean up database rows created for the regression dataset
+        processed_assets: Set[UUID] = set()
+        processed_raw_assets: Set[UUID] = set()
+
         for asset_id in created_assets:
-            session.query(VideoFrame).filter(VideoFrame.asset_id == asset_id).delete(
-                synchronize_session=False
-            )
-            session.query(DocumentChunk).filter(
-                DocumentChunk.asset_id == asset_id
-            ).delete(synchronize_session=False)
-            session.query(Lineage).filter(Lineage.asset_id == asset_id).delete(
-                synchronize_session=False
-            )
-            session.query(Asset).filter(Asset.id == asset_id).delete(
-                synchronize_session=False
-            )
+            _purge_asset(session, asset_id, processed_assets, processed_raw_assets)
+
         for raw_id in created_raw_assets:
-            session.query(AssetRaw).filter(AssetRaw.id == raw_id).delete(
-                synchronize_session=False
-            )
+            if raw_id not in processed_raw_assets:
+                session.query(AssetRaw).filter(AssetRaw.id == raw_id).delete(
+                    synchronize_session=False
+                )
+                processed_raw_assets.add(raw_id)
+
         for cluster_id in created_clusters:
+            dangling_assets = [
+                row[0]
+                for row in session.query(Asset.id)
+                .filter(Asset.cluster_id == cluster_id)
+                .all()
+            ]
+            for asset_id in dangling_assets:
+                _purge_asset(session, asset_id, processed_assets, processed_raw_assets)
+
             session.query(Cluster).filter(Cluster.id == cluster_id).delete(
                 synchronize_session=False
             )
@@ -220,6 +225,42 @@ def _store_raw_file(storage: FilesystemStorage, request_id: str, path: Path) -> 
     with path.open("rb") as f:
         data = f.read()
     return storage.store_raw(request_id, path.stem, BytesIO(data), path.name)
+
+
+def _purge_asset(
+    session,
+    asset_id: UUID,
+    processed_assets: Set[UUID],
+    processed_raw_assets: Set[UUID],
+) -> None:
+    if asset_id in processed_assets:
+        return
+
+    raw_id = (
+        session.query(Asset.raw_asset_id)
+        .filter(Asset.id == asset_id)
+        .scalar()
+    )
+
+    session.query(VideoFrame).filter(VideoFrame.asset_id == asset_id).delete(
+        synchronize_session=False
+    )
+    session.query(DocumentChunk).filter(
+        DocumentChunk.asset_id == asset_id
+    ).delete(synchronize_session=False)
+    session.query(Lineage).filter(Lineage.asset_id == asset_id).delete(
+        synchronize_session=False
+    )
+    session.query(Asset).filter(Asset.id == asset_id).delete(
+        synchronize_session=False
+    )
+    processed_assets.add(asset_id)
+
+    if raw_id and raw_id not in processed_raw_assets:
+        session.query(AssetRaw).filter(AssetRaw.id == raw_id).delete(
+            synchronize_session=False
+        )
+        processed_raw_assets.add(raw_id)
 
 
 def _ingest_document(
@@ -252,9 +293,9 @@ def _ingest_document(
         raw_asset_id=asset_raw.id,
         cluster_id=cluster_id,
         tags=tags,
-        metadata={"source_path": str(file_path)},
     )
     session.add(asset)
+    asset.metadata = {"source_path": str(file_path)}
     session.commit()
 
     service = DocumentService(session, storage)
@@ -369,9 +410,9 @@ def _ingest_json_asset(
         raw_asset_id=asset_raw.id,
         embedding=embedding.tolist(),
         tags=tags,
-        metadata={"source_path": str(file_path)},
     )
     session.add(asset)
+    asset.metadata = {"source_path": str(file_path)}
     session.commit()
 
     return {

@@ -1,22 +1,20 @@
 # Real-Data Regression Testing
 
 These tests exercise the full multimodal ingestion and search stack using production-like
-artifacts. Because they rely on non-public assets, the test harness expects you to point it to
-files that live outside of the repository (for example inside `~/Downloads`).
+artifacts. By default, they scan your `~/Downloads` folder for sample files, making it easy to
+validate the system with documents and media you already have on your machine.
 
 ## Preparing the dataset
 
-1. Create a folder on your workstation (default: `~/Downloads/MammothBoxRealData`).
-2. Populate it with at least the following real-world samples:
-   - One PDF or DOCX document that contains several pages of text. Documents with embedded
-     illustrations are ideal because they verify the embedded-media extraction path.
-   - One JPEG/PNG image (high resolution works best).
-   - Optional but recommended: one short MP4/MOV video and one representative JSON payload.
-3. (Optional) Organize files into subfolders such as `documents/`, `media/images/`,
-   `media/videos/`, and `json/`. The discovery logic simply walks the entire tree and grabs the
-   first file matching each required extension.
-4. If you store the assets somewhere other than `~/Downloads/MammothBoxRealData`, set the
-   `MAMMOTHBOX_REAL_DATA_DIR` environment variable to the folder you created.
+The test suite automatically searches `~/Downloads` (recursively) for:
+- **At least one PDF or DOCX** document (required)
+- **At least one JPEG/PNG** image (required)
+- **Optional:** one MP4/MOV video file
+- **Optional:** one JSON file
+
+You don't need to organize files in any specific way—the tests will find the first matching file
+of each type. If you prefer to use a different directory, set the `MAMMOTHBOX_REAL_DATA_DIR`
+environment variable to point to your custom folder.
 
 ## Running the tests
 
@@ -40,3 +38,12 @@ The test module automatically skips specific scenarios when a required asset typ
 
 If you prefer to run every real-data test regardless of marker selection, remove the
 `-m realdata` flag or set `PYTEST_ADDOPTS="-m realdata"` globally.
+
+## Using a custom data directory
+
+If you want to use a dedicated test dataset instead of scanning `~/Downloads`:
+
+```bash
+export MAMMOTHBOX_REAL_DATA_DIR=~/path/to/test/data
+pytest tests/integration/test_real_data_regression.py -m realdata
+```

@@ -6,7 +6,23 @@ import pytest
 
 from src.documents.parser import DocumentParser
 from src.documents.chunker import DocumentChunker
-from src.documents.embedder import DocumentEmbedder
+from src.documents.embedder import (
+    DocumentEmbedder,
+    DocumentEmbeddingError,
+    SCHEMA_EMBEDDING_DIM,
+)
+
+
+def _mock_embedder_backend(monkeypatch):
+    class FakeModel:
+        def encode(self, texts, **kwargs):
+            return np.ones((len(texts), SCHEMA_EMBEDDING_DIM), dtype=np.float32)
+
+    def fake_get_model(self):
+        self.embedding_dim = SCHEMA_EMBEDDING_DIM
+        return FakeModel()
+
+    monkeypatch.setattr(DocumentEmbedder, "_get_model", fake_get_model, raising=False)
 
 
 def test_document_parser_normalizes_elements(monkeypatch):
@@ -50,20 +66,27 @@ def test_document_chunker_preserves_headings():
 
 
 def test_document_embedder_shapes(monkeypatch):
-    embedder = DocumentEmbedder()
-
-    class FakeModel:
-        def encode(self, texts, **kwargs):
-            return np.ones((len(texts), embedder.embedding_dim), dtype=np.float32)
-
-    monkeypatch.setattr(
-        DocumentEmbedder,
-        "_get_model",
-        lambda self: FakeModel(),
-    )
+    _mock_embedder_backend(monkeypatch)
+    embedder = DocumentEmbedder(model_name="sentence-transformers/all-mpnet-base-v2")
 
     embeddings = embedder.embed_chunks([{"text": "chunk text"}])
-    assert embeddings.shape == (1, embedder.embedding_dim)
+    assert embeddings.shape == (1, SCHEMA_EMBEDDING_DIM)
+
+
+def test_document_embedder_rejects_missing_text(monkeypatch):
+    _mock_embedder_backend(monkeypatch)
+    embedder = DocumentEmbedder(model_name="sentence-transformers/all-mpnet-base-v2")
+
+    with pytest.raises(DocumentEmbeddingError) as excinfo:
+        embedder.embed_chunks([
+            {"text": "okay"},
+            {"text": "   "},
+            {},
+        ])
+
+    message = str(excinfo.value)
+    assert "chunk" in message
+    assert "indexes: 1, 2" in message
 
 
 

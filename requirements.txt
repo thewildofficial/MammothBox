@@ -20,7 +20,7 @@ ffmpeg-python==0.2.0
 pytesseract==0.3.13  # OCR for text detection in images
 
 ## Document Processing
-unstructured==0.18.18
+unstructured[pdf]==0.18.18
 langchain-text-splitters==0.3.11
 pdfminer.six>=20251107
 python-docx==1.1.2

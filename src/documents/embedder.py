@@ -20,7 +20,7 @@ SCHEMA_EMBEDDING_DIM = 768
 class DocumentEmbedder:
     """Wrapper around SentenceTransformer for text/document embeddings."""
 
-    def __init__(self, model_name: str = "all-MiniLM-L12-v2"):
+    def __init__(self, model_name: str = "sentence-transformers/all-mpnet-base-v2"):
         self.model_name = model_name
         self.embedding_dim: Optional[int] = None
         self._model = None
@@ -56,10 +56,33 @@ class DocumentEmbedder:
 
     def embed_chunks(self, chunks: Sequence[dict]) -> np.ndarray:
         """Generate embeddings for a collection of chunk dictionaries."""
-        texts = [chunk.get("text", "") for chunk in chunks if chunk.get("text")]
-        if not texts:
+        if not chunks:
             target_dim = self._ensure_embedding_dim()
             return np.zeros((0, target_dim), dtype=np.float32)
+
+        invalid_indexes: List[int] = []
+        texts: List[str] = []
+
+        for idx, chunk in enumerate(chunks):
+            if not isinstance(chunk, dict):
+                invalid_indexes.append(idx)
+                continue
+
+            text = chunk.get("text")
+            if not isinstance(text, str) or not text.strip():
+                invalid_indexes.append(idx)
+                continue
+
+            texts.append(text)
+
+        if invalid_indexes:
+            preview = ", ".join(str(i) for i in invalid_indexes[:5])
+            raise DocumentEmbeddingError(
+                "Chunk text validation failed for {count} chunk(s); first bad indexes: {indexes}".format(
+                    count=len(invalid_indexes),
+                    indexes=preview,
+                )
+            )
 
         try:
             model = self._get_model()

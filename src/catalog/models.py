@@ -9,13 +9,13 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import uuid4
 
-from sqlalchemy import (
+from sqlalchemy import (  # type: ignore
     Column, String, BigInteger, DateTime, Text, Float, Boolean,
     CheckConstraint, ForeignKey, Integer, JSON, Enum as SQLEnum, Index
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column, synonym
-from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import UUID, ARRAY  # type: ignore
+from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column  # type: ignore
+from pgvector.sqlalchemy import Vector  # type: ignore
 
 
 class Base(DeclarativeBase):
@@ -141,8 +141,6 @@ class Asset(Base):
     )
 
 
-Asset.metadata = synonym("metadata_json")
-
 
 class Cluster(Base):
     """
@@ -177,8 +175,6 @@ class Cluster(Base):
         Index('idx_cluster_provisional', 'provisional'),
     )
 
-
-Cluster.metadata = synonym("cluster_metadata_json")
 
 
 class SchemaDef(Base):
