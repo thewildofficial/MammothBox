@@ -16,6 +16,7 @@ WORKDIR /app
 COPY src/ ./src/
 COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
+COPY alembic.ini ./
 
 # Expose port
 EXPOSE 8000

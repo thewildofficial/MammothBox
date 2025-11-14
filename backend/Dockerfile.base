@@ -2,7 +2,7 @@
 # Build once, reuse many times
 # Build command: docker build -f Dockerfile.base -t mammothbox-base:latest .
 
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 

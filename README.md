@@ -1,6 +1,21 @@
-# Automated File Allocator
+# MammothBox
 
-A smart storage system with a unified frontend interface that intelligently processes and stores any type of data—automatically categorizing media files and making intelligent SQL vs NoSQL storage decisions for JSON documents.
+A smart storage system with unified backend and frontend that intelligently processes and stores any type of data—automatically categorizing media files, processing documents, and making intelligent storage decisions.
+
+## Project Structure
+
+```
+MammothBox/
+├── backend/           # FastAPI backend service
+│   ├── src/          # Python source code
+│   ├── tests/        # Test suite
+│   ├── migrations/   # Database migrations
+│   └── docs/         # API documentation
+├── frontend/         # React frontend (coming soon)
+├── docs/             # Project documentation
+├── README.md         # This file
+└── QUICKSTART.md     # Quick setup guide
+```
 
 ## Features
 
@@ -31,27 +46,34 @@ A smart storage system with a unified frontend interface that intelligently proc
 
 ## Architecture
 
-This is a monolithic backend application with clear modular boundaries, designed for easy extension and eventual service decomposition.
+### Backend (FastAPI)
 
-### Key Components
-
-- **HTTP API**: Single entry point for all clients
+- **HTTP API**: RESTful endpoints for file ingestion and search
 - **Ingest Orchestrator**: Normalizes requests, stores raw inputs, enqueues jobs
-- **Media Processor**: Thumbnailing, CLIP embeddings, clustering, deduplication
-- **JSON Processor**: Schema inference, SQL/JSONB decision, DDL generation
-- **Catalog Service**: Metadata store with PostgreSQL + pgvector
-- **Storage Adapter**: Filesystem storage abstraction
-- **Job Queue**: In-process queue (Redis optional for scaling)
+- **Media Processor**: CLIP embeddings, clustering, deduplication
+- **Document Processor**: PDF/DOCX parsing, chunking, embeddings
+- **JSON Processor**: Schema inference, SQL/JSONB decision
+- **Catalog Service**: PostgreSQL + pgvector for metadata and search
+- **Job Queue**: Async processing (in-process or Redis)
 
-See [docs/technical_specification.md](docs/technical_specification.md) for detailed technical documentation.
+### Frontend (React - Coming Soon)
+
+- Modern React UI for file upload and management
+- Semantic search interface
+- Admin dashboard for cluster management
+- Real-time job status tracking
+
+See [backend/docs/technical_specification.md](backend/docs/technical_specification.md) for detailed backend documentation.
 
 ## Quick Start
 
-**Recommended:** Use Docker for fastest setup (see [QUICKSTART.md](QUICKSTART.md))
+See [QUICKSTART.md](QUICKSTART.md) for detailed setup instructions.
 
-### Docker Setup (Recommended)
+### Backend Setup (Docker - Recommended)
 
 ```bash
+cd backend
+
 # One-time base image build (~30 minutes)
 docker build -f Dockerfile.base -t mammothbox-base:latest .
 
@@ -63,21 +85,31 @@ docker-compose up -d
 curl http://localhost:8000/health
 ```
 
-After the one-time base image build, subsequent code changes rebuild in ~2 seconds!
+**Performance:** After the one-time base image build, subsequent code changes rebuild in ~2 seconds! (1,350x speedup)
 
-See [DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md) for details on the 1,350x speedup.
+See [DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md) for details.
 
-### Local Development Prerequisites
+### Frontend Setup (Coming Soon)
 
-- Python 3.10+
-- PostgreSQL 14+ with pgvector extension
-- Docker & Docker Compose (recommended)
-- ffmpeg (for video processing)
-- Tesseract OCR (for text detection in images)
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-### Local Development Setup
+## Development
 
-1. **Clone and setup environment:**
+### Backend Development
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pytest
+```
+
+See [backend/README.md](backend/README.md) for backend-specific documentation.
 
 ```bash
 git clone <repo-url>
