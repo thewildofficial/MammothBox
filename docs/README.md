@@ -28,4 +28,3 @@ This directory contains all project documentation, organized by topic.
 ## Quick Reference
 
 - **Root `/README.md`** - Project overview and quick start guide
-

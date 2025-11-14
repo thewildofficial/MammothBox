@@ -101,6 +101,9 @@ class Asset(Base):
     schema_id: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("schema_def.id"), nullable=True, index=True)
 
+    # Flexible metadata storage (EXIF, VLM results, admin notes, etc.)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     # Reference to raw upload
     raw_asset_id: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("asset_raw.id"), nullable=True)
@@ -144,6 +147,8 @@ class Cluster(Base):
         Float, default=0.72, nullable=False)  # Default per spec
     provisional: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False)
+    metadata: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True)  # VLM cluster info, admin notes
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -308,7 +313,7 @@ class Job(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[str] = mapped_column(
         String(255), nullable=False, unique=True, index=True)
-    
+
     # Job metadata
     job_type: Mapped[str] = mapped_column(
         SQLEnum('media', 'json', name='job_type'),
@@ -321,10 +326,10 @@ class Job(Base):
         nullable=False,
         index=True
     )
-    
+
     # Job payload (JSONB for flexibility)
     job_data: Mapped[dict] = mapped_column(JSON, nullable=False)
-    
+
     # Retry tracking
     retry_count: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False)
@@ -332,16 +337,16 @@ class Job(Base):
         Integer, default=3, nullable=False)
     next_retry_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True, index=True)
-    
+
     # Dead-letter queue
     dead_letter: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
     # Related assets (for status tracking)
     asset_ids: Mapped[Optional[List[UUID]]] = mapped_column(
         ARRAY(UUID(as_uuid=True)), nullable=True)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -353,7 +358,8 @@ class Job(Base):
         DateTime, nullable=True)
 
     __table_args__ = (
-        CheckConstraint("job_type IN ('media', 'json')", name='job_type_check'),
+        CheckConstraint("job_type IN ('media', 'json')",
+                        name='job_type_check'),
         CheckConstraint(
             "status IN ('queued', 'processing', 'done', 'failed')", name='job_status_check'),
         # Note: request_id unique constraint creates index automatically, so idx_job_request_id is redundant
