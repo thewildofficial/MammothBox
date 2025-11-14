@@ -1,8 +1,4 @@
-"""
-Deduplication module for detecting exact and near-duplicate media files.
-
-Uses SHA256 for exact duplicates and perceptual hash (pHash) for near-duplicates.
-"""
+"""Deduplication module for detecting exact and near-duplicate media files."""
 
 import hashlib
 import logging
@@ -18,73 +14,34 @@ logger = logging.getLogger(__name__)
 
 
 class DeduplicationError(Exception):
-    """Exception raised during deduplication."""
     pass
 
 
 class MediaDeduplicator:
-    """
-    Deduplicator for media files.
-    
-    Checks for exact duplicates (SHA256) and near-duplicates (perceptual hash).
-    """
-    
+    """Deduplicator for media files."""
+
     # Hamming distance threshold for near-duplicates
     NEAR_DUPLICATE_THRESHOLD = 5
-    
+
     def __init__(self, db: Session):
-        """
-        Initialize deduplicator.
-        
-        Args:
-            db: Database session
-        """
         self.db = db
-    
+
     def compute_sha256(self, file_content: bytes) -> str:
-        """
-        Compute SHA256 hash of file content.
-        
-        Args:
-            file_content: File bytes
-            
-        Returns:
-            SHA256 hash hex string
-        """
         return hashlib.sha256(file_content).hexdigest()
-    
+
     def compute_perceptual_hash(self, image_data) -> str:
-        """
-        Compute perceptual hash (pHash) from image.
-        
-        Args:
-            image_data: PIL Image or image bytes
-            
-        Returns:
-            Perceptual hash string
-        """
         from PIL import Image
         from io import BytesIO
-        
+
         if isinstance(image_data, bytes):
             image = Image.open(BytesIO(image_data))
         else:
             image = image_data
-        
+
         phash = imagehash.phash(image)
         return str(phash)
-    
+
     def hamming_distance(self, hash1: str, hash2: str) -> int:
-        """
-        Compute Hamming distance between two perceptual hashes.
-        
-        Args:
-            hash1: First hash string
-            hash2: Second hash string
-            
-        Returns:
-            Hamming distance
-        """
         try:
             h1 = imagehash.hex_to_hash(hash1)
             h2 = imagehash.hex_to_hash(hash2)
@@ -92,14 +49,14 @@ class MediaDeduplicator:
         except Exception as e:
             logger.warning(f"Failed to compute Hamming distance: {e}")
             return float('inf')
-    
+
     def check_exact_duplicate(self, sha256: str) -> Optional[UUID]:
         """
         Check for exact duplicate by SHA256 hash.
-        
+
         Args:
             sha256: SHA256 hash
-            
+
         Returns:
             Asset ID of duplicate if found, None otherwise
         """
@@ -108,20 +65,21 @@ class MediaDeduplicator:
             Asset.kind == 'media',
             Asset.status == 'done'
         ).first()
-        
+
         if existing:
-            logger.info(f"Found exact duplicate: {existing.id} (SHA256: {sha256[:16]}...)")
+            logger.info(
+                f"Found exact duplicate: {existing.id} (SHA256: {sha256[:16]}...)")
             return existing.id
-        
+
         return None
-    
+
     def check_near_duplicate(self, perceptual_hash: str) -> Optional[UUID]:
         """
         Check for near-duplicate by perceptual hash.
-        
+
         Args:
             perceptual_hash: Perceptual hash string
-            
+
         Returns:
             Asset ID of near-duplicate if found, None otherwise
         """
@@ -129,27 +87,28 @@ class MediaDeduplicator:
         # Note: This is stored in metadata JSONB, so we need to query differently
         # For now, we'll check all done media assets and compare hashes
         # In production, consider adding a dedicated column or GIN index
-        
+
         existing_assets = self.db.query(Asset).filter(
             Asset.kind == 'media',
             Asset.status == 'done',
-            Asset.metadata.isnot(None)
+            Asset.asset_metadata.isnot(None)
         ).all()
-        
+
         for asset in existing_assets:
-            if asset.metadata and 'perceptual_hash' in asset.metadata:
-                existing_hash = asset.metadata['perceptual_hash']
-                distance = self.hamming_distance(perceptual_hash, existing_hash)
-                
+            if asset.asset_metadata and 'perceptual_hash' in asset.asset_metadata:
+                existing_hash = asset.asset_metadata['perceptual_hash']
+                distance = self.hamming_distance(
+                    perceptual_hash, existing_hash)
+
                 if distance < self.NEAR_DUPLICATE_THRESHOLD:
                     logger.info(
                         f"Found near-duplicate: {asset.id} "
                         f"(Hamming distance: {distance})"
                     )
                     return asset.id
-        
+
         return None
-    
+
     def check_duplicates(
         self,
         sha256: str,
@@ -157,11 +116,11 @@ class MediaDeduplicator:
     ) -> Tuple[Optional[UUID], bool]:
         """
         Check for both exact and near-duplicates.
-        
+
         Args:
             sha256: SHA256 hash
             perceptual_hash: Optional perceptual hash
-            
+
         Returns:
             Tuple of (duplicate_asset_id, is_exact_duplicate)
         """
@@ -169,12 +128,11 @@ class MediaDeduplicator:
         exact_dup = self.check_exact_duplicate(sha256)
         if exact_dup:
             return exact_dup, True
-        
+
         # Check near-duplicate if perceptual hash provided
         if perceptual_hash:
             near_dup = self.check_near_duplicate(perceptual_hash)
             if near_dup:
                 return near_dup, False
-        
-        return None, False
 
+        return None, False

@@ -1,9 +1,4 @@
-"""
-JSON Schema Analyzer and Flattener.
-
-Utilities for analyzing JSON document structure, detecting data types,
-computing field presence statistics, and flattening nested structures.
-"""
+"""JSON schema analyzer and flattener."""
 
 import hashlib
 import json
@@ -13,7 +8,6 @@ from enum import Enum
 
 
 class JsonType(str, Enum):
-    """Enumeration of JSON data types."""
     NULL = "null"
     BOOLEAN = "boolean"
     INTEGER = "integer"
@@ -24,7 +18,6 @@ class JsonType(str, Enum):
 
 
 class FieldStats:
-    """Statistics for a single JSON field path."""
 
     def __init__(self, path: str):
         self.path = path
@@ -35,7 +28,6 @@ class FieldStats:
         self.max_value_length = 0
 
     def add_value(self, value: Any, json_type: JsonType) -> None:
-        """Record a value observation for this field."""
         self.presence_count += 1
         self.type_counts[json_type] += 1
 
@@ -51,12 +43,7 @@ class FieldStats:
             self.max_value_length = max(self.max_value_length, len(str(value)))
 
     def get_dominant_type(self) -> Tuple[JsonType, float]:
-        """
-        Get the most common type and its fraction.
-
-        Returns:
-            Tuple of (dominant_type, type_stability)
-        """
+        """Get the most common type and its fraction."""
         if not self.type_counts:
             return (JsonType.NULL, 1.0)
 
@@ -67,11 +54,9 @@ class FieldStats:
         return (dominant[0], type_stability)
 
     def get_presence_fraction(self, total_docs: int) -> float:
-        """Calculate what fraction of documents contain this field."""
         return self.presence_count / total_docs if total_docs > 0 else 0.0
 
     def is_likely_foreign_key(self) -> bool:
-        """Heuristic to detect if this might be a foreign key."""
         path_lower = self.path.lower()
         return (
             path_lower.endswith('_id') or
@@ -81,15 +66,6 @@ class FieldStats:
 
 
 def detect_json_type(value: Any) -> JsonType:
-    """
-    Detect the JSON type of a value.
-
-    Args:
-        value: The value to check
-
-    Returns:
-        JsonType enum value
-    """
     if value is None:
         return JsonType.NULL
     elif isinstance(value, bool):
@@ -114,18 +90,6 @@ def flatten_json(
     parent_path: str = "",
     current_depth: int = 0
 ) -> Dict[str, Tuple[Any, JsonType, int]]:
-    """
-    Flatten a nested JSON object to a dictionary of paths.
-
-    Args:
-        obj: The JSON object to flatten
-        max_depth: Maximum nesting depth to traverse
-        parent_path: Current path prefix
-        current_depth: Current nesting level
-
-    Returns:
-        Dictionary mapping flattened paths to (value, type, depth) tuples
-    """
     result = {}
 
     if not isinstance(obj, dict):
@@ -156,21 +120,9 @@ def flatten_json(
 
 
 class JsonSchemaAnalyzer:
-    """
-    Analyzer for JSON document collections.
-
-    Analyzes multiple JSON documents to extract schema information,
-    field statistics, and structural patterns.
-    """
+    """Analyzer for JSON document collections."""
 
     def __init__(self, max_depth: int = 3, max_sample_size: int = 128):
-        """
-        Initialize analyzer.
-
-        Args:
-            max_depth: Maximum nesting depth to analyze
-            max_sample_size: Maximum number of documents to analyze
-        """
         self.max_depth = max_depth
         self.max_sample_size = max_sample_size
         self.field_stats: Dict[str, FieldStats] = {}
@@ -179,12 +131,6 @@ class JsonSchemaAnalyzer:
         self.top_level_keys: Set[str] = set()
 
     def analyze_document(self, doc: Dict[str, Any]) -> None:
-        """
-        Analyze a single JSON document.
-
-        Args:
-            doc: JSON document to analyze
-        """
         if self.documents_analyzed >= self.max_sample_size:
             return
 
@@ -209,12 +155,6 @@ class JsonSchemaAnalyzer:
             self.field_stats[path].add_value(value, json_type)
 
     def analyze_batch(self, documents: List[Dict[str, Any]]) -> None:
-        """
-        Analyze a batch of JSON documents.
-
-        Args:
-            documents: List of JSON documents to analyze
-        """
         # Sample if necessary
         if len(documents) > self.max_sample_size:
             import random
@@ -224,12 +164,7 @@ class JsonSchemaAnalyzer:
             self.analyze_document(doc)
 
     def get_field_stability(self) -> float:
-        """
-        Calculate overall field stability across all fields.
-
-        Returns:
-            Average stability score (0-1)
-        """
+        """Calculate overall field stability across all fields."""
         if not self.field_stats:
             return 0.0
 
@@ -250,12 +185,7 @@ class JsonSchemaAnalyzer:
         return total_presence / len(top_level_stats) if top_level_stats else 0.0
 
     def get_type_stability(self) -> float:
-        """
-        Calculate overall type stability across all fields.
-
-        Returns:
-            Average type stability score (0-1)
-        """
+        """Calculate overall type stability across all fields."""
         if not self.field_stats:
             return 0.0
 
@@ -267,19 +197,13 @@ class JsonSchemaAnalyzer:
         return sum(type_stabilities) / len(type_stabilities) if type_stabilities else 0.0
 
     def has_array_of_objects(self) -> bool:
-        """Check if schema contains arrays of objects (problematic for SQL)."""
         return any(
             path.endswith('[]')
             for path in self.field_stats.keys()
         )
 
     def get_structure_hash(self) -> str:
-        """
-        Generate a hash representing the structure of the analyzed documents.
-
-        Returns:
-            SHA-256 hash of sorted field paths and types
-        """
+        """Generate a hash representing the structure."""
         # Create a stable representation of the schema
         schema_repr = {
             path: str(stats.get_dominant_type()[0])
@@ -290,12 +214,6 @@ class JsonSchemaAnalyzer:
         return hashlib.sha256(schema_str.encode()).hexdigest()
 
     def get_summary(self) -> Dict[str, Any]:
-        """
-        Get a summary of the analysis.
-
-        Returns:
-            Dictionary with analysis results
-        """
         return {
             "documents_analyzed": self.documents_analyzed,
             "total_fields": len(self.field_stats),

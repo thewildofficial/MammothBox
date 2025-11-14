@@ -1,9 +1,4 @@
-"""
-Schema Decision Algorithm.
-
-Intelligently decides whether JSON documents should be stored in SQL tables
-or as JSONB, based on structure stability, complexity, and query patterns.
-"""
+"""Schema decision algorithm for SQL vs JSONB storage."""
 
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
@@ -14,19 +9,13 @@ from src.config.settings import get_settings
 
 
 class StorageChoice(str, Enum):
-    """Storage backend choice for JSON documents."""
     SQL = "sql"
     JSONB = "jsonb"
 
 
 @dataclass
 class SchemaDecision:
-    """
-    Result of schema analysis and storage decision.
-
-    Contains the chosen storage backend, rationale, and metadata
-    needed for schema proposal creation.
-    """
+    """Result of schema analysis and storage decision."""
     storage_choice: StorageChoice
     confidence: float  # 0-1 confidence in the decision
     reason: str  # Human-readable explanation
@@ -44,7 +33,6 @@ class SchemaDecision:
     fields: Dict[str, Dict[str, Any]]
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert decision to dictionary format."""
         return {
             "storage_choice": self.storage_choice.value,
             "confidence": self.confidence,
@@ -63,12 +51,7 @@ class SchemaDecision:
 
 
 class SchemaDecider:
-    """
-    Decides optimal storage strategy for JSON documents.
-
-    Uses configurable heuristics to analyze document structure and
-    recommend SQL vs JSONB storage with confidence scores.
-    """
+    """Decides optimal storage strategy for JSON documents."""
 
     def __init__(
         self,
@@ -77,15 +60,6 @@ class SchemaDecider:
         max_top_level_keys: Optional[int] = None,
         max_depth: Optional[int] = None,
     ):
-        """
-        Initialize schema decider with configuration.
-
-        Args:
-            sample_size: Max documents to analyze (default from settings)
-            stability_threshold: Min field stability for SQL (default from settings)
-            max_top_level_keys: Max top-level fields for SQL (default from settings)
-            max_depth: Max nesting depth to analyze (default from settings)
-        """
         settings = get_settings()
 
         self.sample_size = sample_size or settings.schema_sample_size
@@ -94,15 +68,7 @@ class SchemaDecider:
         self.max_depth = max_depth or settings.schema_max_depth
 
     def decide(self, documents: List[Dict[str, Any]]) -> SchemaDecision:
-        """
-        Analyze documents and decide storage strategy.
-
-        Args:
-            documents: List of JSON documents to analyze
-
-        Returns:
-            SchemaDecision with storage choice and rationale
-        """
+        """Analyze documents and decide storage strategy."""
         # Analyze documents
         # Use a higher max_depth for analysis to discover true nesting depth
         # (we'll compare against self.max_depth for the decision)
@@ -210,15 +176,7 @@ class SchemaDecider:
         )
 
     def explain_decision(self, decision: SchemaDecision) -> str:
-        """
-        Generate detailed explanation of the decision.
-
-        Args:
-            decision: The schema decision to explain
-
-        Returns:
-            Multi-line string explanation
-        """
+        """Generate detailed explanation of the decision."""
         lines = [
             "=" * 60,
             "SCHEMA DECISION ANALYSIS",
@@ -241,16 +199,7 @@ class SchemaDecider:
         return "\n".join(lines)
 
     def generate_collection_name(self, decision: SchemaDecision, hint: Optional[str] = None) -> str:
-        """
-        Generate a collection/table name from the schema.
-
-        Args:
-            decision: The schema decision
-            hint: Optional name hint from user
-
-        Returns:
-            Suggested collection name
-        """
+        """Generate a collection/table name from the schema."""
         # Generate hash-based fallback name
         hash_prefix = decision.structure_hash[:8]
 

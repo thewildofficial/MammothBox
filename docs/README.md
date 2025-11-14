@@ -1,30 +1,26 @@
-# Documentation Index
+# Documentation
 
-This directory contains all project documentation, organized by topic.
+Complete technical documentation for the Automated File Allocator system.
 
-## Architecture & Design
+## Core Documentation
 
-- **`technical_specification.md`** - Complete technical specification
-- **`mvp_backend_design.md`** - MVP architecture and design decisions
-- **`architecture_diagram.png`** - System architecture diagram
+- **`technical_specification.md`** - Detailed technical specification covering architecture, data models, and implementation details
+- **`architecture_diagram.png`** - Visual system architecture diagram
+- **`architecture_diagram.mmd`** - Mermaid source for architecture diagram
 
-## Implementation Documentation
+## Guides & Testing
 
-- **`IMPLEMENTATION_STATUS.md`** - Current implementation status and tracking
-- **`NOTEBOOK_FEATURES_REVIEW.md`** - Comparison of notebook features vs implementation
-- **`MEDIA_PIPELINE_ANALYSIS.md`** - Detailed technical analysis of media processing pipeline
-- **`MEDIA_PIPELINE_SUMMARY.md`** - Executive summary of media pipeline implementation
+- **[`../QUICK_START_DOCKER_OPTIMIZATION.md`](../QUICK_START_DOCKER_OPTIMIZATION.md)** - ⚡ Reduce Docker build from 45min to 5sec
+- **[`../DOCKER_BUILD_OPTIMIZATION.md`](../DOCKER_BUILD_OPTIMIZATION.md)** - Detailed Docker optimization guide
+- **[`../ENDPOINT_TESTING_GUIDE.md`](../ENDPOINT_TESTING_GUIDE.md)** - API endpoint testing commands and examples
+- **[`../TEST_RESULTS.md`](../TEST_RESULTS.md)** - Complete endpoint testing results and bug fixes
+- **[`../BUGS_FIXED.md`](../BUGS_FIXED.md)** - Runtime bugs discovered and fixed during testing
 
-## Testing & Results
+## Configuration
 
-- **`E2E_TEST_RESULTS.md`** - End-to-end test results and analysis
-- **`FEATURE_EXPLANATION_AND_TEST_RESULTS.md`** - Feature explanations and test results
+- **[`../.env.example`](../.env.example)** - Environment variable template
+- **[`../API.md`](../docs/API.md)** - Complete REST API documentation
 
-## Feature-Specific Documentation
+## Quick Start
 
-- **`job_queue_explanation.md`** - Job queue system explanation
-- **`JSON_IMPLEMENTATION_COMPLETE.md`** - JSON processing pipeline documentation
-
-## Quick Reference
-
-- **Root `/README.md`** - Project overview and quick start guide
+See the main [README.md](../README.md) in the project root for quick start instructions and API usage examples.

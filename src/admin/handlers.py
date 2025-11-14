@@ -250,7 +250,7 @@ class AdminHandlers:
                 "asset_count": asset_count,
                 "threshold": cluster.threshold,
                 "provisional": cluster.provisional,
-                "metadata": cluster.metadata,
+                "metadata": cluster.cluster_metadata,
                 "created_at": cluster.created_at.isoformat(),
                 "updated_at": cluster.updated_at.isoformat()
             })
@@ -311,7 +311,7 @@ class AdminHandlers:
             "threshold": cluster.threshold,
             "provisional": cluster.provisional,
             "centroid_quality": centroid_quality,
-            "metadata": cluster.metadata,
+            "metadata": cluster.cluster_metadata,
             "created_at": cluster.created_at.isoformat(),
             "updated_at": cluster.updated_at.isoformat()
         }

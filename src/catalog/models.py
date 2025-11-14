@@ -1,9 +1,4 @@
-"""
-Database models for the Automated File Allocator catalog.
-
-This module defines all SQLAlchemy ORM models for tracking assets,
-schemas, clusters, and lineage information.
-"""
+"""Database models for the Automated File Allocator catalog."""
 
 from datetime import datetime
 from typing import Optional, List
@@ -19,17 +14,11 @@ from pgvector.sqlalchemy import Vector
 
 
 class Base(DeclarativeBase):
-    """Base class for all database models."""
     pass
 
 
 class AssetRaw(Base):
-    """
-    Immutable record of raw uploaded content.
-
-    Stores the original uploaded data before any processing, ensuring
-    auditability and the ability to replay processing if needed.
-    """
+    """Immutable record of raw uploaded content."""
     __tablename__ = "asset_raw"
 
     id: Mapped[UUID] = mapped_column(
@@ -54,12 +43,7 @@ class AssetRaw(Base):
 
 
 class Asset(Base):
-    """
-    Canonical metadata for processed assets.
-
-    Contains embeddings, tags, cluster assignments, and schema references
-    for both media files and JSON documents.
-    """
+    """Canonical metadata for processed assets."""
     __tablename__ = "asset"
 
     id: Mapped[UUID] = mapped_column(
@@ -102,7 +86,7 @@ class Asset(Base):
         UUID(as_uuid=True), ForeignKey("schema_def.id"), nullable=True, index=True)
 
     # Flexible metadata storage (EXIF, VLM results, admin notes, etc.)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    asset_metadata = Column("metadata", JSON, nullable=True)
 
     # Reference to raw upload
     raw_asset_id: Mapped[Optional[UUID]] = mapped_column(
@@ -131,12 +115,7 @@ class Asset(Base):
 
 
 class Cluster(Base):
-    """
-    Media clusters for organizing similar content.
-
-    Stores centroid vectors and thresholds for automatic clustering
-    of media files based on CLIP embeddings.
-    """
+    """Media clusters for organizing similar content."""
     __tablename__ = "cluster"
 
     id: Mapped[UUID] = mapped_column(
@@ -147,8 +126,8 @@ class Cluster(Base):
         Float, default=0.72, nullable=False)  # Default per spec
     provisional: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False)
-    metadata: Mapped[Optional[dict]] = mapped_column(
-        JSON, nullable=True)  # VLM cluster info, admin notes
+    # VLM cluster info, admin notes
+    cluster_metadata = Column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -165,12 +144,7 @@ class Cluster(Base):
 
 
 class SchemaDef(Base):
-    """
-    JSON schema definitions and storage decisions.
-
-    Tracks schema proposals, storage choice (SQL vs JSONB), generated DDL,
-    and approval status for JSON document storage.
-    """
+    """JSON schema definitions and storage decisions."""
     __tablename__ = "schema_def"
 
     id: Mapped[UUID] = mapped_column(
@@ -232,12 +206,7 @@ class SchemaDef(Base):
 
 
 class Lineage(Base):
-    """
-    Audit trail for asset processing.
-
-    Tracks every stage of processing for complete observability and
-    debugging of the ingestion pipeline.
-    """
+    """Audit trail for asset processing."""
     __tablename__ = "lineage"
 
     id: Mapped[UUID] = mapped_column(
@@ -276,11 +245,7 @@ class Lineage(Base):
 
 
 class VideoFrame(Base):
-    """
-    Per-frame embeddings for video assets.
-
-    Enables frame-level semantic search within videos.
-    """
+    """Per-frame embeddings for video assets."""
     __tablename__ = "video_frame"
 
     id: Mapped[UUID] = mapped_column(
@@ -374,37 +339,41 @@ class Job(Base):
 class IngestionBatch(Base):
     """
     Batch ingestion tracking for recursive folder uploads.
-    
+
     Tracks progress of bulk folder ingestion operations, allowing
     users to monitor status and troubleshoot failures.
     """
     __tablename__ = 'ingestion_batch'
-    
+
     batch_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    
+
     # Batch status tracking
     status: Mapped[str] = mapped_column(
-        SQLEnum('pending', 'processing', 'completed', 'failed', name='batch_status'),
+        SQLEnum('pending', 'processing', 'completed',
+                'failed', name='batch_status'),
         default='pending',
         nullable=False,
         index=True
     )
-    
+
     # Progress counters
-    total_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    processed_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
+    total_files: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
+    processed_files: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
+
     # Error tracking
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     failed_files: Mapped[Optional[List[str]]] = mapped_column(
         ARRAY(String), nullable=True
     )
-    
+
     # Metadata
     user_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    
+    owner: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True
@@ -418,7 +387,7 @@ class IngestionBatch(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True
     )
-    
+
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'processing', 'completed', 'failed')",

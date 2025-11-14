@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/aban/drive/Projects/Automated-File-Allocator/scripts/stress_test_runner.py", line 21, in <module>
-    from src.queue.inproc import InProcessQueue
-  File "/Users/aban/drive/Projects/Automated-File-Allocator/src/queue/__init__.py", line 8, in <module>
-    from src.config.settings import get_settings
-  File "/Users/aban/drive/Projects/Automated-File-Allocator/src/config/settings.py", line 3, in <module>
-    from pydantic_settings import BaseSettings
-ModuleNotFoundError: No module named 'pydantic_settings'

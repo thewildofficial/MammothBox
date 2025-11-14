@@ -1,11 +1,4 @@
-"""
-Filesystem storage backend implementation.
-
-Stores files in a local directory structure:
-- incoming/{request_id}/{part_id}/ - raw uploads
-- media/clusters/{cluster_id}/{asset_id}/ - processed media
-- media/derived/{cluster_id}/{asset_id}/ - thumbnails and derivatives
-"""
+"""Filesystem storage backend implementation."""
 
 import shutil
 from io import BytesIO
@@ -17,24 +10,13 @@ from src.storage.adapter import StorageAdapter, StorageError
 
 
 class FilesystemStorage(StorageAdapter):
-    """
-    Filesystem-based storage implementation.
-
-    Organizes files in a structured directory hierarchy on the local filesystem.
-    """
+    """Filesystem-based storage implementation."""
 
     def __init__(self, base_path: str = "./storage"):
-        """
-        Initialize filesystem storage.
-
-        Args:
-            base_path: Root directory for all storage
-        """
         self.base_path = Path(base_path).resolve()
         self._ensure_structure()
 
     def _ensure_structure(self) -> None:
-        """Create the directory structure if it doesn't exist."""
         directories = [
             self.base_path / "incoming",
             self.base_path / "media" / "clusters",
@@ -44,18 +26,7 @@ class FilesystemStorage(StorageAdapter):
             directory.mkdir(parents=True, exist_ok=True)
 
     def _uri_to_path(self, uri: str) -> Path:
-        """
-        Convert a URI to a filesystem path.
-
-        Args:
-            uri: URI string (e.g., 'fs://incoming/req123/part1/file.jpg')
-
-        Returns:
-            Absolute Path object
-
-        Raises:
-            StorageError: If URI format is invalid
-        """
+        """Convert a URI to a filesystem path."""
         if not uri.startswith("fs://"):
             raise StorageError(f"Invalid URI scheme: {uri}")
 
@@ -64,20 +35,10 @@ class FilesystemStorage(StorageAdapter):
         return self.base_path / relative_path
 
     def _path_to_uri(self, path: Path) -> str:
-        """
-        Convert a filesystem path to a URI.
-
-        Args:
-            path: Absolute Path object
-
-        Returns:
-            URI string
-        """
         relative_path = path.relative_to(self.base_path)
         return f"fs://{relative_path.as_posix()}"
 
     def store_raw(self, request_id: str, part_id: str, file: BinaryIO, filename: str) -> str:
-        """Store a raw uploaded file."""
         try:
             # Create directory structure
             target_dir = self.base_path / "incoming" / request_id / part_id
@@ -93,10 +54,10 @@ class FilesystemStorage(StorageAdapter):
             raise StorageError(f"Failed to store raw file: {e}") from e
 
     def store_media(self, cluster_id: UUID, asset_id: UUID, file: BinaryIO, filename: str) -> str:
-        """Store a processed media file in its cluster."""
         try:
             # Create directory structure: media/clusters/{cluster_id}/
-            target_dir = self.base_path / "media" / "clusters" / str(cluster_id)
+            target_dir = self.base_path / "media" / \
+                "clusters" / str(cluster_id)
             target_dir.mkdir(parents=True, exist_ok=True)
 
             # Store file: media/clusters/{cluster_id}/{asset_id}.ext

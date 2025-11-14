@@ -1,9 +1,4 @@
-"""
-Media processing service orchestrator.
-
-Coordinates all stages of media processing: normalization, embedding,
-deduplication, clustering, and storage finalization.
-"""
+"""Media processing service orchestrator."""
 
 import hashlib
 import logging
@@ -26,26 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 class MediaServiceError(Exception):
-    """Exception raised during media processing service operations."""
     pass
 
 
 class MediaService:
-    """
-    Main service for processing media files through the complete pipeline.
-
-    Orchestrates all stages: normalization, embedding, deduplication,
-    clustering, and storage finalization.
-    """
+    """Main service for processing media files through the complete pipeline."""
 
     def __init__(self, db: Session, storage: StorageAdapter):
-        """
-        Initialize media service.
-
-        Args:
-            db: Database session
-            storage: Storage adapter
-        """
         self.db = db
         self.storage = storage
         self.settings = get_settings()
@@ -56,16 +38,7 @@ class MediaService:
         self.vlm_analyzer = VLMAnalyzer()  # VLM for metadata extraction
 
     def process_asset(self, asset_id: UUID, request_id: str) -> Dict[str, Any]:
-        """
-        Process a single media asset through the complete pipeline.
-
-        Args:
-            asset_id: Asset ID to process
-            request_id: Request ID for lineage tracking
-
-        Returns:
-            Dictionary with processing results
-        """
+        """Process a single media asset through the complete pipeline."""
         # Load asset
         asset = self.db.query(Asset).filter(Asset.id == asset_id).first()
         if not asset:
@@ -112,11 +85,11 @@ class MediaService:
                         logger.warning(f"VLM analysis failed: {e}")
                     except Exception as e:
                         logger.error(f"Unexpected VLM error: {e}")
-                
+
                 # Stage 2.6: OCR Text Detection (if image contains text)
                 text_detector = self.processor._get_text_detector()
                 ocr_processor = self.processor._get_ocr_processor()
-                
+
                 if text_detector and ocr_processor:
                     try:
                         # Save temp file for text detection
@@ -126,12 +99,15 @@ class MediaService:
                         tmp_path = None
                         try:
                             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-                                processed_data.normalized_image.save(tmp, format='JPEG')
+                                processed_data.normalized_image.save(
+                                    tmp, format='JPEG')
                                 tmp_path = tmp.name
-                            
-                            has_text, text_confidence = text_detector.contains_text(tmp_path)
+
+                            has_text, text_confidence = text_detector.contains_text(
+                                tmp_path)
                             if has_text:
-                                logger.info(f"Text detected in image (confidence: {text_confidence:.2f})")
+                                logger.info(
+                                    f"Text detected in image (confidence: {text_confidence:.2f})")
                                 ocr_result = ocr_processor.extract_text_from_pil(
                                     processed_data.normalized_image
                                 )
@@ -145,7 +121,8 @@ class MediaService:
                                 try:
                                     os.unlink(tmp_path)
                                 except OSError as e:
-                                    logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
+                                    logger.warning(
+                                        f"Failed to delete temp file {tmp_path}: {e}")
                     except Exception as e:
                         logger.warning(f"OCR processing failed: {e}")
 
@@ -297,7 +274,7 @@ class MediaService:
                         "vlm_fallback_used": vlm_metadata.fallback_used,
                         "vlm_processing_time_ms": vlm_metadata.processing_time_ms
                     })
-                
+
                 # Add OCR metadata if text was detected
                 if ocr_result:
                     metadata.update({
@@ -318,7 +295,7 @@ class MediaService:
                         "contains_text": True
                     })
 
-                asset.metadata = metadata
+                asset.asset_metadata = metadata
                 self.db.commit()
 
                 self._log_lineage(
@@ -450,8 +427,8 @@ class MediaService:
             # Update cluster with VLM-generated name
             old_name = cluster.name
             cluster.name = cluster_metadata.cluster_name
-            cluster.metadata = cluster.metadata or {}
-            cluster.metadata.update({
+            cluster.cluster_metadata = cluster.cluster_metadata or {}
+            cluster.cluster_metadata.update({
                 "vlm_description": cluster_metadata.description,
                 "vlm_tags": cluster_metadata.tags,
                 "vlm_primary_category": cluster_metadata.primary_category,

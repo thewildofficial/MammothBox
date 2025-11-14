@@ -32,13 +32,13 @@ SLOW_QUERY_THRESHOLD_MS = 150
 def log_query_time(func: Callable) -> Callable:
     """
     Decorator to log query execution time and warn on slow queries.
-    
+
     Logs execution time for all decorated functions and emits warnings
     when queries exceed the performance threshold (150ms by default).
-    
+
     Args:
         func: Function to decorate
-        
+
     Returns:
         Decorated function with timing instrumentation
     """
@@ -47,15 +47,15 @@ def log_query_time(func: Callable) -> Callable:
         start = time.perf_counter()
         result = func(*args, **kwargs)
         duration_ms = (time.perf_counter() - start) * 1000
-        
+
         logger.info(f"Query {func.__name__} took {duration_ms:.2f}ms")
-        
+
         if duration_ms > SLOW_QUERY_THRESHOLD_MS:
             logger.warning(
                 f"SLOW QUERY: {func.__name__} exceeded {SLOW_QUERY_THRESHOLD_MS}ms target "
                 f"(took {duration_ms:.2f}ms)"
             )
-        
+
         return result
     return wrapper
 
@@ -343,7 +343,7 @@ class QueryProcessor:
                     cluster_name=cluster.name if cluster else None,
                     thumbnail_uri=self._get_thumbnail_uri(asset),
                     created_at=asset.created_at.isoformat(),
-                    metadata=asset.metadata
+                    metadata=asset.asset_metadata
                 )
                 results.append(result)
 
@@ -435,7 +435,7 @@ class QueryProcessor:
         except Exception as e:
             logger.error(f"Tag search error: {e}")
             raise QueryError(f"Tag search failed: {e}") from e
-    
+
     @log_query_time
     def search_with_ocr(
         self,
@@ -445,30 +445,30 @@ class QueryProcessor:
     ) -> SearchResponse:
         """
         Hybrid search combining vector similarity and OCR text matching.
-        
+
         This method performs a two-stage search:
         1. Vector similarity search using CLIP embeddings
         2. Keyword matching in OCR-extracted text
-        
+
         Results from both stages are merged and re-ranked, with OCR matches
         receiving a relevance boost for better text-based search.
-        
+
         Args:
             db: Database session
             query: Text query string
             filters: Search filters
-            
+
         Returns:
             SearchResponse with hybrid-ranked results
         """
         import time
         start_time = time.perf_counter()
-        
+
         try:
             # Stage 1: Vector similarity search
             vector_response = self.search(db, query, filters)
             vector_results = {r.asset_id: r for r in vector_response.results}
-            
+
             # Stage 2: OCR text keyword matching
             # Build filter for assets with OCR text
             filter_conditions = self.build_search_filters(
@@ -477,22 +477,22 @@ class QueryProcessor:
                 cluster_id=filters.cluster_id,
                 tags=filters.tags
             )
-            
+
             # Add OCR text filter using JSONB containment
             # Search for query text in metadata.ocr_text field (case-insensitive)
             ocr_query = db.query(Asset).filter(and_(*filter_conditions))
             ocr_query = ocr_query.filter(
-                Asset.metadata['ocr_text'].astext.ilike(f"%{query}%")
+                Asset.asset_metadata['ocr_text'].astext.ilike(f"%{query}%")
             )
             ocr_assets = ocr_query.limit(filters.limit * 2).all()
-            
+
             # Merge results with OCR boost
             merged_results = {}
-            
+
             # Add vector results
             for asset_id, result in vector_results.items():
                 merged_results[asset_id] = result
-            
+
             # Add/boost OCR results
             for asset in ocr_assets:
                 asset_id = str(asset.id)
@@ -523,7 +523,7 @@ class QueryProcessor:
                         cluster = db.query(Cluster).filter(
                             Cluster.id == asset.cluster_id
                         ).first()
-                    
+
                     merged_results[asset_id] = SearchResult(
                         asset_id=asset_id,
                         kind=asset.kind,
@@ -533,23 +533,24 @@ class QueryProcessor:
                         owner=asset.owner,
                         tags=asset.tags or [],
                         similarity_score=0.6,  # Baseline score for OCR matches
-                        cluster_id=str(asset.cluster_id) if asset.cluster_id else None,
+                        cluster_id=str(
+                            asset.cluster_id) if asset.cluster_id else None,
                         cluster_name=cluster.name if cluster else None,
                         thumbnail_uri=self._get_thumbnail_uri(asset),
                         created_at=asset.created_at.isoformat(),
-                        metadata=asset.metadata
+                        metadata=asset.asset_metadata
                     )
-            
+
             # Sort by similarity score (descending) and limit
             sorted_results = sorted(
                 merged_results.values(),
                 key=lambda x: x.similarity_score,
                 reverse=True
             )[:filters.limit]
-            
+
             # Calculate total hybrid search time (not just vector search)
             total_time_ms = (time.perf_counter() - start_time) * 1000
-            
+
             return SearchResponse(
                 query=query,
                 results=sorted_results,
@@ -557,7 +558,7 @@ class QueryProcessor:
                 query_time_ms=round(total_time_ms, 2),
                 filters_applied=filters.__dict__
             )
-            
+
         except QueryError:
             raise
         except Exception as e:

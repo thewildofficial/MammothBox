@@ -1,25 +1,21 @@
-FROM python:3.9-slim
+# Fast application image - extends pre-built base
+# This builds in ~5 seconds since base contains all heavy dependencies
+# 
+# First time setup:
+#   1. Build base: docker build -f Dockerfile.base -t mammothbox-base:latest .
+#   2. Build app: docker-compose build
+# 
+# For code changes (subsequent builds):
+#   docker-compose build  (takes ~5 seconds)
+
+FROM mammothbox-base:latest
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libpq-dev \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
+# Copy application code (only ~1-2MB, very fast)
 COPY src/ ./src/
 COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
-
-# Create storage directories
-RUN mkdir -p /app/storage/{incoming,media,derived,json}
 
 # Expose port
 EXPOSE 8000

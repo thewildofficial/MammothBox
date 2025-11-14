@@ -200,7 +200,7 @@ class TestRetrieve:
 
     def test_retrieve_invalid_uri_scheme(self, temp_storage):
         """Test retrieving with invalid URI scheme."""
-        uri = "s3://bucket/key/file.txt"
+        uri = "http://invalid/scheme/file.txt"
 
         with pytest.raises(StorageError, match="Invalid URI scheme"):
             temp_storage.retrieve(uri)

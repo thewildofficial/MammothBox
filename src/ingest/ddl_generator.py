@@ -1,9 +1,4 @@
-"""
-DDL Generator for SQL Schemas.
-
-Generates CREATE TABLE statements with appropriate column types,
-constraints, and indexes based on JSON schema analysis.
-"""
+"""DDL Generator for SQL schemas."""
 
 from typing import List, Dict, Any, Set
 from src.ingest.schema_analyzer import JsonType, FieldStats
@@ -11,20 +6,9 @@ from src.ingest.schema_decider import SchemaDecision
 
 
 class DDLGenerator:
-    """
-    Generates SQL DDL (Data Definition Language) statements.
-
-    Creates table schemas from analyzed JSON documents with proper
-    types, nullable columns, indexes, and a fallback JSONB column.
-    """
+    """Generates SQL DDL statements from analyzed JSON documents."""
 
     def __init__(self, include_fallback_jsonb: bool = True):
-        """
-        Initialize DDL generator.
-
-        Args:
-            include_fallback_jsonb: Include a fallback JSONB column for unmapped fields
-        """
         self.include_fallback_jsonb = include_fallback_jsonb
 
     def _map_json_type_to_sql(
@@ -33,17 +17,6 @@ class DDLGenerator:
         max_length: int = 0,
         is_nullable: bool = True
     ) -> str:
-        """
-        Map JSON type to SQL column type.
-
-        Args:
-            json_type: The JSON type to map
-            max_length: Maximum observed length for strings
-            is_nullable: Whether the column should be nullable
-
-        Returns:
-            SQL column type string
-        """
         type_mapping = {
             JsonType.NULL: "TEXT",
             JsonType.BOOLEAN: "BOOLEAN",
@@ -58,15 +31,6 @@ class DDLGenerator:
         return sql_type
 
     def _get_string_type(self, max_length: int) -> str:
-        """
-        Determine appropriate string column type.
-
-        Args:
-            max_length: Maximum observed string length
-
-        Returns:
-            VARCHAR or TEXT type
-        """
         if max_length == 0:
             return "TEXT"
         elif max_length <= 255:
@@ -77,15 +41,6 @@ class DDLGenerator:
             return "TEXT"
 
     def _sanitize_column_name(self, name: str) -> str:
-        """
-        Sanitize a column name for SQL.
-
-        Args:
-            name: Original column name
-
-        Returns:
-            SQL-safe column name
-        """
         # Replace dots with underscores (flattened paths)
         name = name.replace(".", "_")
 
@@ -116,17 +71,7 @@ class DDLGenerator:
         decision: SchemaDecision,
         include_audit_columns: bool = True
     ) -> str:
-        """
-        Generate CREATE TABLE DDL statement.
-
-        Args:
-            table_name: Name for the table
-            decision: Schema decision with field analysis
-            include_audit_columns: Add created_at/updated_at columns
-
-        Returns:
-            Complete CREATE TABLE SQL statement
-        """
+        """Generate CREATE TABLE DDL statement."""
         lines = []
         columns = []
         indexes = []
@@ -173,15 +118,6 @@ class DDLGenerator:
         self,
         decision: SchemaDecision
     ) -> Dict[str, List[str]]:
-        """
-        Generate column definitions and indexes from field analysis.
-
-        Args:
-            decision: Schema decision with field information
-
-        Returns:
-            Dictionary with 'columns' and 'indexes' lists
-        """
         columns = []
         indexes = []
         seen_columns: Set[str] = set()
@@ -244,16 +180,7 @@ class DDLGenerator:
         collection_name: str,
         include_audit_columns: bool = True
     ) -> str:
-        """
-        Generate DDL for a JSONB document collection table.
-
-        Args:
-            collection_name: Name for the collection table
-            include_audit_columns: Add created_at/updated_at columns
-
-        Returns:
-            Complete CREATE TABLE SQL statement
-        """
+        """Generate DDL for a JSONB document collection table."""
         lines = []
 
         lines.append(f"CREATE TABLE IF NOT EXISTS {collection_name} (")
@@ -280,17 +207,7 @@ class DDLGenerator:
         decision: SchemaDecision,
         placeholder_style: str = "named"
     ) -> str:
-        """
-        Generate INSERT statement template for the table.
-
-        Args:
-            table_name: Name of the table
-            decision: Schema decision with field information
-            placeholder_style: 'named' for :field or 'positional' for %s
-
-        Returns:
-            INSERT statement template
-        """
+        """Generate INSERT statement template."""
         # Get top-level field names only
         columns = []
         for field_path in decision.fields.keys():

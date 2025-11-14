@@ -1,8 +1,4 @@
-"""
-Storage backend abstraction for file operations.
-
-Provides adapters for filesystem and S3 storage backends.
-"""
+"""Storage backend abstraction for file operations."""
 
 from src.storage.adapter import StorageAdapter, StorageError
 from src.storage.filesystem import FilesystemStorage

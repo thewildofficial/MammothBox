@@ -1,12 +1,4 @@
-"""
-Vision Language Model analyzer for image metadata extraction.
-
-Provides two approaches:
-1. Individual image analysis - Detailed metadata per image
-2. Cluster labeling - Efficient naming for groups of similar images
-
-Uses Google Gemini 2.5 Flash with CLIP zero-shot fallback.
-"""
+"""Vision Language Model analyzer for image metadata extraction."""
 
 import io
 import json
@@ -25,13 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class VLMError(Exception):
-    """Exception raised during VLM processing."""
     pass
 
 
 @dataclass
 class VLMMetadata:
-    """Structured metadata from VLM analysis of individual image."""
     primary_category: str
     tags: List[str]  # 5-15 descriptive tags
     description: str  # 1-2 sentence summary
@@ -46,7 +36,6 @@ class VLMMetadata:
 
 @dataclass
 class ClusterMetadata:
-    """Structured metadata from VLM analysis of image cluster."""
     cluster_name: str  # Human-readable name (2-4 words)
     description: str  # Brief description of commonality
     tags: List[str]  # 5-10 relevant tags
@@ -57,11 +46,7 @@ class ClusterMetadata:
 
 
 class VLMAnalyzer:
-    """
-    Vision Language Model analyzer using Gemini 2.5 Flash.
-
-    Supports both individual image analysis and efficient cluster labeling.
-    """
+    """Vision Language Model analyzer using Gemini 2.5 Flash."""
 
     # Predefined categories for CLIP zero-shot fallback
     CLIP_CATEGORIES = [
