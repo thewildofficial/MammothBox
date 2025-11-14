@@ -15,12 +15,6 @@ class Settings(BaseSettings):
     storage_backend: str = "fs://"
     storage_path: str = "./storage"
 
-    # S3 (if using s3:// backend)
-    aws_access_key_id: str = ""
-    aws_secret_access_key: str = ""
-    aws_region: str = "us-east-1"
-    s3_bucket: str = "file-allocator"
-
     # Application
     app_host: str = "0.0.0.0"
     app_port: int = 8000
