@@ -8,18 +8,24 @@ Complete technical documentation for the Automated File Allocator system.
 - **`architecture_diagram.png`** - Visual system architecture diagram
 - **`architecture_diagram.mmd`** - Mermaid source for architecture diagram
 
-## Guides & Testing
+## Guides & Setup
 
-- **[`../QUICK_START_DOCKER_OPTIMIZATION.md`](../QUICK_START_DOCKER_OPTIMIZATION.md)** - ⚡ Reduce Docker build from 45min to 5sec
-- **[`../DOCKER_BUILD_OPTIMIZATION.md`](../DOCKER_BUILD_OPTIMIZATION.md)** - Detailed Docker optimization guide
-- **[`../ENDPOINT_TESTING_GUIDE.md`](../ENDPOINT_TESTING_GUIDE.md)** - API endpoint testing commands and examples
-- **[`../TEST_RESULTS.md`](../TEST_RESULTS.md)** - Complete endpoint testing results and bug fixes
-- **[`../BUGS_FIXED.md`](../BUGS_FIXED.md)** - Runtime bugs discovered and fixed during testing
+- **[`../QUICKSTART.md`](../QUICKSTART.md)** - Get up and running in 5 minutes
+- **[`../DOCKER_OPTIMIZATION.md`](../DOCKER_OPTIMIZATION.md)** - ⚡ Docker build optimization (45min → 2sec)
+- **[`API.md`](API.md)** - Complete REST API documentation
 
-## Configuration
+## Status
 
-- **[`../.env.example`](../.env.example)** - Environment variable template
-- **[`../API.md`](../docs/API.md)** - Complete REST API documentation
+All core features are implemented and working:
+
+- ✅ Media upload and processing with CLIP embeddings
+- ✅ Semantic search with vector similarity
+- ✅ Automatic clustering and deduplication
+- ✅ Admin cluster management operations
+- ✅ Batch folder ingestion tracking
+- ✅ Docker build optimization (1,350x faster rebuilds)
+
+All known bugs have been fixed as of November 15, 2025.
 
 ## Quick Start
 

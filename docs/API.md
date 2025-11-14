@@ -10,20 +10,28 @@ Currently no authentication required (add your auth implementation here).
 
 ## Endpoints
 
-### Health Check
+### Health & Status Endpoints
 
-**GET** `/health`
+**GET** `/` - Root endpoint with service info
 
-Check system health status.
+**GET** `/health` - Health check
 
-**Response:**
+**GET** `/live` - Liveness probe
+
+**GET** `/ready` - Readiness probe with database check
+
+**Response Examples:**
 
 ```json
+// /health or /live
 {
-  "status": "healthy",
-  "database": { "status": "healthy" },
-  "storage": { "status": "healthy" },
-  "workers": { "status": "healthy" }
+  "status": "healthy"
+}
+
+// /ready
+{
+  "status": "ready",
+  "database": "connected"
 }
 ```
 

@@ -8,7 +8,7 @@ from sqlalchemy import (
     Column, String, BigInteger, DateTime, Text, Float, Boolean,
     CheckConstraint, ForeignKey, Integer, JSON, Enum as SQLEnum, Index
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 
@@ -342,16 +342,19 @@ class IngestionBatch(Base):
 
     Tracks progress of bulk folder ingestion operations, allowing
     users to monitor status and troubleshoot failures.
+
+    Note: This model maps to the actual database schema which uses
+    'id' as primary key and 'request_id' for batch identification.
     """
     __tablename__ = 'ingestion_batch'
 
-    batch_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    id: Mapped[UUID] = mapped_column(UUID, primary_key=True, default=uuid4)
+    request_id: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True)
 
     # Batch status tracking
     status: Mapped[str] = mapped_column(
-        SQLEnum('pending', 'processing', 'completed',
-                'failed', name='batch_status'),
+        String(50),
         default='pending',
         nullable=False,
         index=True
@@ -362,38 +365,43 @@ class IngestionBatch(Base):
         Integer, default=0, nullable=False)
     processed_files: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False)
+    failed_files: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
 
-    # Error tracking
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    failed_files: Mapped[Optional[List[str]]] = mapped_column(
-        ARRAY(String), nullable=True
+    # Batch metadata as JSONB (stores folder_path, error_message, owner, etc.)
+    # Note: using 'batch_metadata' instead of 'metadata' as 'metadata' is reserved by SQLAlchemy
+    batch_metadata: Mapped[Optional[dict]] = mapped_column(
+        'metadata', JSONB, nullable=True
     )
-
-    # Metadata
-    user_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    owner: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True, index=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=datetime.utcnow, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
-    started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
     )
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True
     )
 
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('pending', 'processing', 'completed', 'failed')",
-            name='batch_status_check'
-        ),
-        Index('idx_ingestion_batch_status', 'status'),
-        Index('idx_ingestion_batch_owner', 'owner'),
-        Index('idx_ingestion_batch_created_at', 'created_at'),
-    )
+    # Helper properties to access batch_metadata fields
+    @property
+    def batch_id(self) -> str:
+        """Alias for request_id for backward compatibility."""
+        return self.request_id
+
+    @property
+    def folder_path(self) -> Optional[str]:
+        """Get folder_path from batch_metadata."""
+        return self.batch_metadata.get('folder_path') if self.batch_metadata else None
+
+    @property
+    def owner(self) -> Optional[str]:
+        """Get owner from batch_metadata."""
+        return self.batch_metadata.get('owner') if self.batch_metadata else None
+
+    @property
+    def error_message(self) -> Optional[str]:
+        """Get error_message from batch_metadata."""
+        return self.batch_metadata.get('error_message') if self.batch_metadata else None

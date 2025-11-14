@@ -47,7 +47,27 @@ See [docs/technical_specification.md](docs/technical_specification.md) for detai
 
 ## Quick Start
 
-### Prerequisites
+**Recommended:** Use Docker for fastest setup (see [QUICKSTART.md](QUICKSTART.md))
+
+### Docker Setup (Recommended)
+
+```bash
+# One-time base image build (~30 minutes)
+docker build -f Dockerfile.base -t mammothbox-base:latest .
+
+# Fast app build (~2 seconds)
+docker-compose build
+docker-compose up -d
+
+# Verify it's running
+curl http://localhost:8000/health
+```
+
+After the one-time base image build, subsequent code changes rebuild in ~2 seconds!
+
+See [DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md) for details on the 1,350x speedup.
+
+### Local Development Prerequisites
 
 - Python 3.10+
 - PostgreSQL 14+ with pgvector extension

@@ -23,13 +23,13 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting worker supervisor...")
     queue_backend = get_queue_backend()
-    
+
     # Register processors
     processors = {
         "json": JsonJobProcessor(),
         "media": MediaJobProcessor(),  # Placeholder for future
     }
-    
+
     # Create and start supervisor
     supervisor = WorkerSupervisor(
         queue_backend=queue_backend,
@@ -38,10 +38,11 @@ async def lifespan(app: FastAPI):
     )
     supervisor.start()
     set_worker_supervisor(supervisor)
-    logger.info(f"Worker supervisor started with {settings.worker_threads} workers")
-    
+    logger.info(
+        f"Worker supervisor started with {settings.worker_threads} workers")
+
     yield
-    
+
     # Shutdown
     logger.info("Stopping worker supervisor...")
     supervisor.stop()
@@ -70,18 +71,37 @@ app.add_middleware(
 # Include API routes
 app.include_router(router, prefix="/api/v1")
 
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "service": "Automated File Allocator API",
+        "version": "0.1.0",
+        "status": "running",
+        "docs": "/docs"
+    }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint (alias for /live)"""
+    return {"status": "healthy"}
+
+
 @app.get("/live")
 async def liveness():
-    """Health check endpoint"""
+    """Liveness check endpoint"""
     return {"status": "alive"}
+
 
 @app.get("/ready")
 async def readiness():
     """Readiness check endpoint"""
     from src.catalog.database import check_database_connection
-    
+
     db_healthy = check_database_connection()
-    
+
     return {
         "status": "ready" if db_healthy else "not_ready",
         "database": "connected" if db_healthy else "disconnected"
@@ -94,4 +114,3 @@ if __name__ == "__main__":
         port=settings.app_port,
         reload=settings.debug
     )
-

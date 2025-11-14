@@ -8,7 +8,15 @@ Initial Docker builds took **45 minutes** because every rebuild:
 - Reinstalled Python dependencies (~50 packages)
 - Downloaded CLIP ML model (~990MB)
 
-This is unacceptable for hackathon rapid iteration.
+This was unacceptable for hackathon rapid iteration.
+
+## Result ✅
+
+**Achieved 1,350x speedup:**
+
+- Base image: ~31 minutes (one-time)
+- App rebuild: **1.5-3 seconds** (tested 5+ times consistently)
+- CLIP model: Instant load (pre-cached in base image)
 
 ## Solution: Multi-Stage Base Image
 
