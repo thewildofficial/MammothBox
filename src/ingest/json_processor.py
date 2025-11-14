@@ -1,9 +1,4 @@
-"""
-JSON Processor Service.
-
-Main orchestrator for JSON document processing, schema analysis,
-and storage coordination.
-"""
+"""JSON document processor service."""
 
 import json
 import hashlib
@@ -21,25 +16,13 @@ from src.config.settings import get_settings
 
 
 class JsonProcessingError(Exception):
-    """Exception raised during JSON processing."""
     pass
 
 
 class JsonProcessor:
-    """
-    Processes JSON documents through analysis, decision, and storage.
-
-    Coordinates the entire JSON ingestion pipeline from raw documents
-    to stored data with appropriate schema decisions.
-    """
+    """Processes JSON documents through analysis, decision, and storage."""
 
     def __init__(self, db: Session):
-        """
-        Initialize JSON processor.
-
-        Args:
-            db: Database session
-        """
         self.db = db
         self.settings = get_settings()
         self.decider = SchemaDecider()
@@ -52,18 +35,7 @@ class JsonProcessor:
         owner: Optional[str] = None,
         collection_name_hint: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Process a batch of JSON documents.
-
-        Args:
-            documents: List of JSON documents to process
-            request_id: Unique request identifier for tracking
-            owner: Optional owner identifier
-            collection_name_hint: Optional hint for collection/table name
-
-        Returns:
-            Dictionary with processing results
-        """
+        """Process a batch of JSON documents."""
         try:
             # Log start of processing
             self._log_lineage(
@@ -142,17 +114,6 @@ class JsonProcessor:
         request_id: str,
         collection_name_hint: Optional[str] = None
     ) -> SchemaDef:
-        """
-        Find existing schema or create new provisional schema.
-
-        Args:
-            decision: Schema decision result
-            request_id: Request ID for lineage
-            collection_name_hint: Optional name hint
-
-        Returns:
-            SchemaDef instance
-        """
         # Check if schema with this structure hash already exists
         existing_schema = self.db.query(SchemaDef).filter(
             SchemaDef.structure_hash == decision.structure_hash
@@ -224,12 +185,6 @@ class JsonProcessor:
         return schema_def
 
     def _execute_ddl(self, schema_def: SchemaDef) -> None:
-        """
-        Execute DDL to create table/collection.
-
-        Args:
-            schema_def: Schema definition with DDL
-        """
         if not schema_def.ddl:
             raise JsonProcessingError("Schema definition has no DDL")
 
@@ -248,18 +203,6 @@ class JsonProcessor:
         request_id: str,
         owner: Optional[str] = None
     ) -> List[UUID]:
-        """
-        Process documents for SQL storage.
-
-        Args:
-            documents: JSON documents to store
-            schema_def: Schema definition
-            request_id: Request ID for tracking
-            owner: Optional owner
-
-        Returns:
-            List of created asset IDs
-        """
         asset_ids = []
 
         # Note: Actual SQL insertion would happen here
@@ -294,18 +237,6 @@ class JsonProcessor:
         request_id: str,
         owner: Optional[str] = None
     ) -> List[UUID]:
-        """
-        Process documents for JSONB storage.
-
-        Args:
-            documents: JSON documents to store
-            schema_def: Schema definition
-            request_id: Request ID for tracking
-            owner: Optional owner
-
-        Returns:
-            List of created asset IDs
-        """
         asset_ids = []
 
         # Note: Actual JSONB insertion would happen here
@@ -343,18 +274,6 @@ class JsonProcessor:
         schema_id: Optional[UUID] = None,
         error_message: Optional[str] = None
     ) -> None:
-        """
-        Log processing lineage for audit trail.
-
-        Args:
-            request_id: Request identifier
-            stage: Processing stage name
-            detail: Stage details
-            success: Whether stage succeeded
-            asset_id: Optional asset ID
-            schema_id: Optional schema ID
-            error_message: Optional error message
-        """
         lineage = Lineage(
             id=uuid4(),
             request_id=request_id,
@@ -369,16 +288,7 @@ class JsonProcessor:
         self.db.commit()
 
     def approve_schema(self, schema_id: UUID, reviewed_by: str) -> SchemaDef:
-        """
-        Approve a provisional schema and execute DDL.
-
-        Args:
-            schema_id: ID of schema to approve
-            reviewed_by: Identifier of reviewer
-
-        Returns:
-            Updated schema definition
-        """
+        """Approve a provisional schema and execute DDL."""
         schema_def = self.db.query(SchemaDef).filter(
             SchemaDef.id == schema_id).first()
 
@@ -407,17 +317,7 @@ class JsonProcessor:
         return schema_def
 
     def reject_schema(self, schema_id: UUID, reviewed_by: str, reason: str) -> SchemaDef:
-        """
-        Reject a provisional schema.
-
-        Args:
-            schema_id: ID of schema to reject
-            reviewed_by: Identifier of reviewer
-            reason: Rejection reason
-
-        Returns:
-            Updated schema definition
-        """
+        """Reject a provisional schema."""
         schema_def = self.db.query(SchemaDef).filter(
             SchemaDef.id == schema_id).first()
 

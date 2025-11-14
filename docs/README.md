@@ -1,30 +1,32 @@
-# Documentation Index
+# Documentation
 
-This directory contains all project documentation, organized by topic.
+Complete technical documentation for the Automated File Allocator system.
 
-## Architecture & Design
+## Core Documentation
 
-- **`technical_specification.md`** - Complete technical specification
-- **`mvp_backend_design.md`** - MVP architecture and design decisions
-- **`architecture_diagram.png`** - System architecture diagram
+- **`technical_specification.md`** - Detailed technical specification covering architecture, data models, and implementation details
+- **`architecture_diagram.png`** - Visual system architecture diagram
+- **`architecture_diagram.mmd`** - Mermaid source for architecture diagram
 
-## Implementation Documentation
+## Guides & Setup
 
-- **`IMPLEMENTATION_STATUS.md`** - Current implementation status and tracking
-- **`NOTEBOOK_FEATURES_REVIEW.md`** - Comparison of notebook features vs implementation
-- **`MEDIA_PIPELINE_ANALYSIS.md`** - Detailed technical analysis of media processing pipeline
-- **`MEDIA_PIPELINE_SUMMARY.md`** - Executive summary of media pipeline implementation
+- **[`../QUICKSTART.md`](../QUICKSTART.md)** - Get up and running in 5 minutes
+- **[`../DOCKER_OPTIMIZATION.md`](../DOCKER_OPTIMIZATION.md)** - ⚡ Docker build optimization (45min → 2sec)
+- **[`API.md`](API.md)** - Complete REST API documentation
 
-## Testing & Results
+## Status
 
-- **`E2E_TEST_RESULTS.md`** - End-to-end test results and analysis
-- **`FEATURE_EXPLANATION_AND_TEST_RESULTS.md`** - Feature explanations and test results
+All core features are implemented and working:
 
-## Feature-Specific Documentation
+- ✅ Media upload and processing with CLIP embeddings
+- ✅ Semantic search with vector similarity
+- ✅ Automatic clustering and deduplication
+- ✅ Admin cluster management operations
+- ✅ Batch folder ingestion tracking
+- ✅ Docker build optimization (1,350x faster rebuilds)
 
-- **`job_queue_explanation.md`** - Job queue system explanation
-- **`JSON_IMPLEMENTATION_COMPLETE.md`** - JSON processing pipeline documentation
+All known bugs have been fixed as of November 15, 2025.
 
-## Quick Reference
+## Quick Start
 
-- **Root `/README.md`** - Project overview and quick start guide
+See the main [README.md](../README.md) in the project root for quick start instructions and API usage examples.

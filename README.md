@@ -40,16 +40,34 @@ This is a monolithic backend application with clear modular boundaries, designed
 - **Media Processor**: Thumbnailing, CLIP embeddings, clustering, deduplication
 - **JSON Processor**: Schema inference, SQL/JSONB decision, DDL generation
 - **Catalog Service**: Metadata store with PostgreSQL + pgvector
-- **Storage Adapter**: Filesystem or S3-compatible storage abstraction
+- **Storage Adapter**: Filesystem storage abstraction
 - **Job Queue**: In-process queue (Redis optional for scaling)
 
-See [docs/mvp_backend_design.md](docs/mvp_backend_design.md) for detailed architecture documentation.
-
-**New Features:** See [docs/NEW_FEATURES.md](docs/NEW_FEATURES.md) for database optimizations, OCR text detection, and recursive folder ingestion.
+See [docs/technical_specification.md](docs/technical_specification.md) for detailed technical documentation.
 
 ## Quick Start
 
-### Prerequisites
+**Recommended:** Use Docker for fastest setup (see [QUICKSTART.md](QUICKSTART.md))
+
+### Docker Setup (Recommended)
+
+```bash
+# One-time base image build (~30 minutes)
+docker build -f Dockerfile.base -t mammothbox-base:latest .
+
+# Fast app build (~2 seconds)
+docker-compose build
+docker-compose up -d
+
+# Verify it's running
+curl http://localhost:8000/health
+```
+
+After the one-time base image build, subsequent code changes rebuild in ~2 seconds!
+
+See [DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md) for details on the 1,350x speedup.
+
+### Local Development Prerequisites
 
 - Python 3.10+
 - PostgreSQL 14+ with pgvector extension
@@ -79,16 +97,19 @@ cp .env.example .env
 3. **Install system dependencies:**
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt-get install tesseract-ocr ffmpeg
 ```
 
 **macOS:**
+
 ```bash
 brew install tesseract ffmpeg
 ```
 
 **Windows:**
+
 - Install Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
 - Install ffmpeg from: https://ffmpeg.org/download.html
 
@@ -114,14 +135,30 @@ The API will be available at `http://localhost:8000`
 
 ### Docker Compose (Full Stack)
 
+**Standard Build** (First time - 45 minutes):
+
 ```bash
 docker-compose up -d
 ```
 
+**Optimized Build for Hackathons** (5 seconds after initial setup):
+
+```bash
+# One-time setup (45 min - do before hackathon)
+docker build -f Dockerfile.base -t mammothbox-base:latest .
+
+# Update docker-compose.yml to use Dockerfile.optimized
+# Then every rebuild is instant:
+docker-compose build app  # 5 seconds!
+docker-compose up -d       # Instant startup!
+```
+
+See [DOCKER_BUILD_OPTIMIZATION.md](DOCKER_BUILD_OPTIMIZATION.md) for details.
+
 This starts:
 
 - PostgreSQL with pgvector
-- Application server
+- Application server (with pre-loaded CLIP model)
 - Redis (optional, for job queue)
 
 ## API Endpoints
@@ -243,7 +280,7 @@ Automated-File-Allocator/
 │   ├── media/            # Media processing pipeline
 │   ├── json/             # JSON schema inference
 │   ├── catalog/          # Metadata catalog service
-│   ├── storage/          # Storage abstraction (fs/s3)
+│   ├── storage/          # Storage abstraction
 │   ├── queue/            # Job queue interface
 │   ├── admin/            # Admin UI backend
 │   └── config/           # Configuration management
@@ -261,9 +298,7 @@ Automated-File-Allocator/
 Key environment variables (see `.env.example`):
 
 - `DATABASE_URL`: PostgreSQL connection string
-- `STORAGE_BACKEND`: `fs://` or `s3://`
-- `STORAGE_PATH`: Local filesystem path (for `fs://`)
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`: For S3 backend
+- `STORAGE_PATH`: Local filesystem path
 - `EMBEDDING_MODEL`: CLIP model name (default: `openai/clip-vit-base-patch32`)
 - `CLUSTER_THRESHOLD`: Default similarity threshold (default: 0.8)
 - `WORKER_THREADS`: Number of worker threads (default: 4)
@@ -297,7 +332,7 @@ See [docs/architecture_diagram.png](docs/architecture_diagram.png) for a visual 
 
 1. **KISS First**: Monolith with clear module boundaries
 2. **Single Database**: PostgreSQL + pgvector for all data
-3. **Storage Abstraction**: Switchable fs/s3 backends
+3. **Storage Abstraction**: Filesystem-based storage
 4. **CPU-Friendly**: No GPU required for MVP
 5. **Idempotent**: All operations are auditable and replayable
 6. **Human-in-the-Loop**: Schema and cluster decisions are provisional

@@ -1,0 +1,32 @@
+# Base image with all heavy dependencies
+# Build once, reuse many times
+# Build command: docker build -f Dockerfile.base -t mammothbox-base:latest .
+
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies (ffmpeg, PostgreSQL client, OCR, etc.)
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libpq-dev \
+    gcc \
+    tesseract-ocr \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download CLIP model (~990MB, eliminates 2min startup delay)
+# This is the most time-consuming step
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/clip-ViT-B-32')"
+
+# Create storage directories
+RUN mkdir -p /app/storage/{incoming,media,derived,json}
+
+# Set environment
+ENV PYTHONUNBUFFERED=1
+
+# This base image is now ready to be extended by Dockerfile

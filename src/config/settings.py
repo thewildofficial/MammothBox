@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     api_key: str = ""
     allowed_origins: List[str] = [
         "http://localhost:3000", "http://localhost:8000"]
-    ingest_allowed_root: Optional[str] = None  # Optional root directory for folder ingestion (None = no restriction)
+    # Optional root directory for folder ingestion (None = no restriction)
+    ingest_allowed_root: Optional[str] = None
 
     # Observability
     metrics_enabled: bool = True

@@ -250,7 +250,7 @@ class AdminHandlers:
                 "asset_count": asset_count,
                 "threshold": cluster.threshold,
                 "provisional": cluster.provisional,
-                "metadata": cluster.metadata,
+                "metadata": cluster.cluster_metadata,
                 "created_at": cluster.created_at.isoformat(),
                 "updated_at": cluster.updated_at.isoformat()
             })
@@ -287,11 +287,11 @@ class AdminHandlers:
 
         # Compute centroid quality (avg similarity to centroid)
         centroid_quality = None
-        if cluster.centroid and assets:
+        if cluster.centroid is not None and assets:
             centroid_vec = np.array(cluster.centroid, dtype=np.float32)
             similarities = []
             for asset in assets:
-                if asset.embedding:
+                if asset.embedding is not None:
                     asset_vec = np.array(asset.embedding, dtype=np.float32)
                     sim = float(np.dot(centroid_vec, asset_vec))
                     similarities.append(sim)
@@ -311,7 +311,7 @@ class AdminHandlers:
             "threshold": cluster.threshold,
             "provisional": cluster.provisional,
             "centroid_quality": centroid_quality,
-            "metadata": cluster.metadata,
+            "metadata": cluster.cluster_metadata,
             "created_at": cluster.created_at.isoformat(),
             "updated_at": cluster.updated_at.isoformat()
         }
@@ -422,7 +422,7 @@ class AdminHandlers:
 
                 for asset in assets:
                     asset.cluster_id = target_cluster_id
-                    if asset.embedding:
+                    if asset.embedding is not None:
                         all_embeddings.append(
                             np.array(asset.embedding, dtype=np.float32))
 
@@ -597,12 +597,17 @@ class AdminHandlers:
 
         total_assets = self.db.query(Asset).count()
 
-        # Average assets per cluster
-        avg_assets = self.db.query(
-            func.avg(func.count(Asset.id))
+        # Average assets per cluster - use subquery to avoid nested aggregates
+        from sqlalchemy import select
+        subquery = select(
+            func.count(Asset.id).label('asset_count')
         ).select_from(Cluster).outerjoin(
             Asset, Asset.cluster_id == Cluster.id
-        ).group_by(Cluster.id).scalar() or 0
+        ).group_by(Cluster.id).subquery()
+
+        avg_assets = self.db.query(
+            func.avg(subquery.c.asset_count)
+        ).scalar() or 0
 
         return {
             "total_clusters": total_clusters,
@@ -636,7 +641,7 @@ class AdminHandlers:
         # Compare all pairs
         for i, c1 in enumerate(clusters):
             for c2 in clusters[i+1:]:
-                if c1.centroid and c2.centroid:
+                if c1.centroid is not None and c2.centroid is not None:
                     vec1 = np.array(c1.centroid, dtype=np.float32)
                     vec2 = np.array(c2.centroid, dtype=np.float32)
 

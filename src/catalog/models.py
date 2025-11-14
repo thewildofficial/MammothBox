@@ -1,35 +1,24 @@
-"""
-Database models for the Automated File Allocator catalog.
-
-This module defines all SQLAlchemy ORM models for tracking assets,
-schemas, clusters, and lineage information.
-"""
+"""Database models for the Automated File Allocator catalog."""
 
 from datetime import datetime
 from typing import Optional, List
 from uuid import uuid4
 
-from sqlalchemy import (  # type: ignore
+from sqlalchemy import (
     Column, String, BigInteger, DateTime, Text, Float, Boolean,
     CheckConstraint, ForeignKey, Integer, JSON, Enum as SQLEnum, Index
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY  # type: ignore
-from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column  # type: ignore
-from pgvector.sqlalchemy import Vector  # type: ignore
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
+from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
+from pgvector.sqlalchemy import Vector
 
 
 class Base(DeclarativeBase):
-    """Base class for all database models."""
     pass
 
 
 class AssetRaw(Base):
-    """
-    Immutable record of raw uploaded content.
-
-    Stores the original uploaded data before any processing, ensuring
-    auditability and the ability to replay processing if needed.
-    """
+    """Immutable record of raw uploaded content."""
     __tablename__ = "asset_raw"
 
     id: Mapped[UUID] = mapped_column(
@@ -54,12 +43,7 @@ class AssetRaw(Base):
 
 
 class Asset(Base):
-    """
-    Canonical metadata for processed assets.
-
-    Contains embeddings, tags, cluster assignments, and schema references
-    for both media files and JSON documents.
-    """
+    """Canonical metadata for processed assets."""
     __tablename__ = "asset"
 
     id: Mapped[UUID] = mapped_column(
@@ -105,7 +89,7 @@ class Asset(Base):
         UUID(as_uuid=True), ForeignKey("schema_def.id"), nullable=True, index=True)
 
     # Flexible metadata storage (EXIF, VLM results, admin notes, etc.)
-    metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
+    asset_metadata = Column("metadata", JSON, nullable=True)
 
     # Reference to raw upload
     raw_asset_id: Mapped[Optional[UUID]] = mapped_column(
@@ -130,7 +114,8 @@ class Asset(Base):
         "DocumentChunk", back_populates="asset", cascade="all, delete-orphan"
     )
     __table_args__ = (
-        CheckConstraint("kind IN ('media', 'json', 'document')", name='asset_kind_check'),
+        CheckConstraint("kind IN ('media', 'json', 'document')",
+                        name='asset_kind_check'),
         CheckConstraint(
             "status IN ('queued', 'processing', 'done', 'failed')", name='asset_status_check'),
         Index('idx_asset_kind', 'kind'),
@@ -141,14 +126,8 @@ class Asset(Base):
     )
 
 
-
 class Cluster(Base):
-    """
-    Media clusters for organizing similar content.
-
-    Stores centroid vectors and thresholds for automatic clustering
-    of media files based on CLIP embeddings.
-    """
+    """Media clusters for organizing similar content."""
     __tablename__ = "cluster"
 
     id: Mapped[UUID] = mapped_column(
@@ -159,8 +138,8 @@ class Cluster(Base):
         Float, default=0.72, nullable=False)  # Default per spec
     provisional: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False)
-    cluster_metadata_json: Mapped[Optional[dict]] = mapped_column(
-        "metadata", JSON, nullable=True)  # VLM cluster info, admin notes
+    # VLM cluster info, admin notes
+    cluster_metadata = Column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -176,14 +155,8 @@ class Cluster(Base):
     )
 
 
-
 class SchemaDef(Base):
-    """
-    JSON schema definitions and storage decisions.
-
-    Tracks schema proposals, storage choice (SQL vs JSONB), generated DDL,
-    and approval status for JSON document storage.
-    """
+    """JSON schema definitions and storage decisions."""
     __tablename__ = "schema_def"
 
     id: Mapped[UUID] = mapped_column(
@@ -245,12 +218,7 @@ class SchemaDef(Base):
 
 
 class Lineage(Base):
-    """
-    Audit trail for asset processing.
-
-    Tracks every stage of processing for complete observability and
-    debugging of the ingestion pipeline.
-    """
+    """Audit trail for asset processing."""
     __tablename__ = "lineage"
 
     id: Mapped[UUID] = mapped_column(
@@ -289,11 +257,7 @@ class Lineage(Base):
 
 
 class VideoFrame(Base):
-    """
-    Per-frame embeddings for video assets.
-
-    Enables frame-level semantic search within videos.
-    """
+    """Per-frame embeddings for video assets."""
     __tablename__ = "video_frame"
 
     id: Mapped[UUID] = mapped_column(
@@ -397,7 +361,8 @@ class DocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    parent_heading: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    parent_heading: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True)
     page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     element_type: Mapped[str] = mapped_column(String(100), nullable=False)
     embedding = Column(Vector(768), nullable=False)
@@ -405,7 +370,8 @@ class DocumentChunk(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    asset: Mapped["Asset"] = relationship("Asset", back_populates="document_chunks")
+    asset: Mapped["Asset"] = relationship(
+        "Asset", back_populates="document_chunks")
 
     __table_args__ = (
         Index("idx_document_chunk_asset_id", "asset_id"),
@@ -416,57 +382,69 @@ class DocumentChunk(Base):
 class IngestionBatch(Base):
     """
     Batch ingestion tracking for recursive folder uploads.
-    
+
     Tracks progress of bulk folder ingestion operations, allowing
     users to monitor status and troubleshoot failures.
+
+    Note: This model maps to the actual database schema which uses
+    'id' as primary key and 'request_id' for batch identification.
     """
     __tablename__ = 'ingestion_batch'
-    
-    batch_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    
+
+    id: Mapped[UUID] = mapped_column(UUID, primary_key=True, default=uuid4)
+    request_id: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True)
+
     # Batch status tracking
     status: Mapped[str] = mapped_column(
-        SQLEnum('pending', 'processing', 'completed', 'failed', name='batch_status'),
+        String(50),
         default='pending',
         nullable=False,
         index=True
     )
-    
+
     # Progress counters
-    total_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    processed_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
-    # Error tracking
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    failed_files: Mapped[Optional[List[str]]] = mapped_column(
-        ARRAY(String), nullable=True
+    total_files: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
+    processed_files: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
+    failed_files: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False)
+
+    # Batch metadata as JSONB (stores folder_path, error_message, owner, etc.)
+    # Note: using 'batch_metadata' instead of 'metadata' as 'metadata' is reserved by SQLAlchemy
+    batch_metadata: Mapped[Optional[dict]] = mapped_column(
+        'metadata', JSONB, nullable=True
     )
-    
-    # Metadata
-    user_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=datetime.utcnow, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
-    started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
-    )
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True
     )
-    
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('pending', 'processing', 'completed', 'failed')",
-            name='batch_status_check'
-        ),
-        Index('idx_ingestion_batch_status', 'status'),
-        Index('idx_ingestion_batch_owner', 'owner'),
-        Index('idx_ingestion_batch_created_at', 'created_at'),
-    )
+
+    # Helper properties to access batch_metadata fields
+    @property
+    def batch_id(self) -> str:
+        """Alias for request_id for backward compatibility."""
+        return self.request_id
+
+    @property
+    def folder_path(self) -> Optional[str]:
+        """Get folder_path from batch_metadata."""
+        return self.batch_metadata.get('folder_path') if self.batch_metadata else None
+
+    @property
+    def owner(self) -> Optional[str]:
+        """Get owner from batch_metadata."""
+        return self.batch_metadata.get('owner') if self.batch_metadata else None
+
+    @property
+    def error_message(self) -> Optional[str]:
+        """Get error_message from batch_metadata."""
+        return self.batch_metadata.get('error_message') if self.batch_metadata else None

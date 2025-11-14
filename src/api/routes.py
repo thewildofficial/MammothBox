@@ -1,5 +1,6 @@
 # API routes
 
+import logging
 import json
 from uuid import uuid4, UUID
 from datetime import datetime
@@ -16,7 +17,6 @@ from src.admin.handlers import AdminHandlers, AdminError
 
 router = APIRouter()
 
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -51,23 +51,7 @@ def ingest(
     collection_name: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Unified ingestion endpoint for media files and JSON documents.
-
-    - **files**: Media files (images, videos, audio) or any file type
-    - **payload**: JSON object or array (as JSON string)
-    - **owner**: Optional owner identifier
-    - **comments**: Optional metadata/comments (used as hint for schema generation)
-    - **idempotency_key**: Optional idempotency key for deduplication
-    - **collection_name**: Optional hint for collection/table name (deprecated, use comments)
-
-    Returns 202 Accepted immediately with job_id for async processing.
-
-    Supports:
-    - Single or batch media files
-    - Single or batch JSON documents
-    - Mixed media and JSON in same request
-    """
+    """Unified ingestion endpoint for media files and JSON documents."""
     try:
         orchestrator = IngestionOrchestrator(db)
         result = orchestrator.ingest(
@@ -97,11 +81,7 @@ def ingest(
 
 @router.get("/ingest/{job_id}/status")
 def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
-    """
-    Get processing status for an ingestion job.
-
-    Returns real-time status including per-asset progress.
-    """
+    """Get processing status for an ingestion job."""
     try:
         job_uuid = UUID(job_id)
     except ValueError:
@@ -158,16 +138,7 @@ def get_ingest_status(job_id: str, db: Session = Depends(get_db)):
 
 @router.get("/objects/{system_id}")
 def get_object(system_id: str, db: Session = Depends(get_db)):
-    """
-    Get canonical metadata for an asset by system ID.
-
-    Returns complete asset metadata including:
-    - Basic info (id, kind, uri, size, etc.)
-    - Processing status
-    - Cluster info (for media)
-    - Schema info (for JSON)
-    - Tags and metadata
-    """
+    """Get canonical metadata for an asset by system ID."""
     try:
         asset_uuid = UUID(system_id)
     except ValueError:
@@ -197,9 +168,10 @@ def get_object(system_id: str, db: Session = Depends(get_db)):
     if asset.kind == "media":
         # Media-specific fields
         response["tags"] = asset.tags or []
+        has_embedding = asset.embedding is not None
         response["embedding"] = {
-            "dimension": 512 if asset.embedding else None,
-            "model": "clip-ViT-B-32" if asset.embedding else None
+            "dimension": 512 if has_embedding else None,
+            "model": "clip-ViT-B-32" if has_embedding else None
         }
 
         # Cluster info
@@ -267,13 +239,7 @@ async def search(
         None, description="Filter by type: media or json"),
     limit: int = Query(10, ge=1, le=100)
 ):
-    """
-    Semantic search for media files using CLIP embeddings (Phase 2: Media processing).
-
-    Examples:
-    - "dog" - finds all images/videos with dogs
-    - "monkey with a hat" - finds specific compositions
-    """
+    """Semantic search for media files using CLIP embeddings."""
     return {"results": []}
 
 
@@ -283,13 +249,7 @@ def list_schemas(
         None, description="Filter by status: provisional, active, rejected"),
     db: Session = Depends(get_db)
 ):
-    """
-    List all schema definitions.
-
-    - **status**: Optional filter by schema status
-
-    Returns list of schemas with their DDL and decision rationale.
-    """
+    """List all schema definitions."""
     query = db.query(SchemaDef)
 
     if status:
@@ -534,7 +494,7 @@ def search_assets(
 
 # Schema Management Endpoints
 
-@router.get("/api/v1/admin/schemas")
+@router.get("/admin/schemas")
 def list_schemas(
     status: Optional[str] = Query(
         None, description="Filter by status (provisional, active, rejected)"),
@@ -560,7 +520,7 @@ def list_schemas(
             status_code=500, detail=f"Failed to list schemas: {str(e)}")
 
 
-@router.get("/api/v1/admin/schemas/pending")
+@router.get("/admin/schemas/pending")
 def get_pending_schemas(db: Session = Depends(get_db)):
     """
     Get all provisional schemas awaiting review.
@@ -579,7 +539,7 @@ def get_pending_schemas(db: Session = Depends(get_db)):
             status_code=500, detail=f"Failed to get pending schemas: {str(e)}")
 
 
-@router.get("/api/v1/admin/schemas/{schema_id}")
+@router.get("/admin/schemas/{schema_id}")
 def get_schema(schema_id: UUID, db: Session = Depends(get_db)):
     """
     Get detailed schema information.
@@ -601,7 +561,7 @@ class SchemaApprovalRequest(BaseModel):
     table_name: Optional[str] = None
 
 
-@router.post("/api/v1/admin/schemas/{schema_id}/approve")
+@router.post("/admin/schemas/{schema_id}/approve")
 def approve_schema(
     schema_id: UUID,
     request: SchemaApprovalRequest,
@@ -640,7 +600,7 @@ class SchemaRejectionRequest(BaseModel):
     reason: str
 
 
-@router.post("/api/v1/admin/schemas/{schema_id}/reject")
+@router.post("/admin/schemas/{schema_id}/reject")
 def reject_schema(
     schema_id: UUID,
     request: SchemaRejectionRequest,
@@ -674,7 +634,7 @@ def reject_schema(
 
 # Cluster Management Endpoints
 
-@router.get("/api/v1/admin/clusters")
+@router.get("/admin/clusters")
 def list_clusters(
     provisional_only: bool = Query(
         False, description="Only return provisional clusters"),
@@ -702,7 +662,7 @@ def list_clusters(
             status_code=500, detail=f"Failed to list clusters: {str(e)}")
 
 
-@router.get("/api/v1/admin/clusters/statistics")
+@router.get("/admin/clusters/statistics")
 def get_cluster_statistics(db: Session = Depends(get_db)):
     """
     Get overall cluster statistics.
@@ -721,7 +681,7 @@ def get_cluster_statistics(db: Session = Depends(get_db)):
             status_code=500, detail=f"Failed to get cluster statistics: {str(e)}")
 
 
-@router.get("/api/v1/admin/clusters/merge-candidates")
+@router.get("/admin/clusters/merge-candidates")
 def get_merge_candidates(
     similarity_threshold: float = Query(
         0.85, description="Minimum centroid similarity"),
@@ -757,7 +717,7 @@ def get_merge_candidates(
             status_code=500, detail=f"Failed to identify merge candidates: {str(e)}")
 
 
-@router.get("/api/v1/admin/clusters/{cluster_id}")
+@router.get("/admin/clusters/{cluster_id}")
 def get_cluster(cluster_id: UUID, db: Session = Depends(get_db)):
     """
     Get detailed cluster information with statistics.
@@ -779,7 +739,7 @@ class ClusterRenameRequest(BaseModel):
     performed_by: str
 
 
-@router.post("/api/v1/admin/clusters/{cluster_id}/rename")
+@router.post("/admin/clusters/{cluster_id}/rename")
 def rename_cluster(
     cluster_id: UUID,
     request: ClusterRenameRequest,
@@ -813,7 +773,7 @@ class ClusterMergeRequest(BaseModel):
     performed_by: str
 
 
-@router.post("/api/v1/admin/clusters/{target_cluster_id}/merge")
+@router.post("/admin/clusters/{target_cluster_id}/merge")
 def merge_clusters(
     target_cluster_id: UUID,
     request: ClusterMergeRequest,
@@ -853,7 +813,7 @@ class ClusterThresholdRequest(BaseModel):
     re_evaluate: bool = False
 
 
-@router.post("/api/v1/admin/clusters/{cluster_id}/threshold")
+@router.post("/admin/clusters/{cluster_id}/threshold")
 def update_cluster_threshold(
     cluster_id: UUID,
     request: ClusterThresholdRequest,
@@ -887,7 +847,7 @@ class ClusterConfirmRequest(BaseModel):
     performed_by: str
 
 
-@router.post("/api/v1/admin/clusters/{cluster_id}/confirm")
+@router.post("/admin/clusters/{cluster_id}/confirm")
 def confirm_cluster(
     cluster_id: UUID,
     request: ClusterConfirmRequest,
@@ -938,32 +898,32 @@ class FolderIngestRequest(BaseModel):
     user_comment: Optional[str] = None
 
 
-@router.post("/api/v1/ingest/folder", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/ingest/folder", status_code=status.HTTP_202_ACCEPTED)
 def ingest_folder(
     request: FolderIngestRequest,
     db: Session = Depends(get_db)
 ):
     """
     Recursively ingest all supported files from a folder.
-    
+
     Returns 202 Accepted immediately with batch_id for tracking progress.
     Files are processed asynchronously in the background.
-    
+
     **Security Note:** This endpoint validates folder paths against configured
     allowed roots to prevent arbitrary path access. Only paths under the
     configured ingest root are permitted.
-    
+
     **Request Body:**
     - **folder_path** (required): Absolute path to folder to ingest (must be under allowed root)
     - **owner**: Optional owner identifier for all ingested assets
     - **user_comment**: Optional comment/description for the batch
-    
+
     **Returns:**
     - **batch_id**: Unique identifier for tracking this batch
     - **status**: Initial status (accepted)
     - **message**: Confirmation message
     - **status_url**: URL to check batch progress
-    
+
     **Example:**
     ```json
     {
@@ -977,13 +937,13 @@ def ingest_folder(
     from src.ingest.folder_scanner import FolderScanner
     from src.config.settings import get_settings
     import uuid
-    
+
     settings = get_settings()
-    
+
     try:
         # Validate folder path
         folder_path = Path(request.folder_path).resolve()
-        
+
         # Security: Constrain folder paths to allowed roots
         # If ingest_allowed_root is configured, enforce it
         if hasattr(settings, 'ingest_allowed_root') and settings.ingest_allowed_root:
@@ -995,13 +955,15 @@ def ingest_folder(
                     status_code=403,
                     detail=f"Folder path must be under allowed root: {allowed_root}"
                 )
-        
+
         if not folder_path.exists():
-            raise HTTPException(status_code=404, detail=f"Folder not found: {request.folder_path}")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Folder not found: {request.folder_path}")
+
         if not folder_path.is_dir():
-            raise HTTPException(status_code=400, detail=f"Not a directory: {request.folder_path}")
-        
+            raise HTTPException(
+                status_code=400, detail=f"Not a directory: {request.folder_path}")
+
         # Quick scan to get file count
         scanner = FolderScanner()
         try:
@@ -1009,27 +971,31 @@ def ingest_folder(
         except Exception as e:
             logger.exception("Failed to scan folder")
             db.rollback()
-            raise HTTPException(status_code=400, detail=f"Failed to scan folder: {str(e)}") from e
-        
+            raise HTTPException(
+                status_code=400, detail=f"Failed to scan folder: {str(e)}") from e
+
         if stats['total_files'] == 0:
             raise HTTPException(
                 status_code=400,
                 detail="No supported files found in folder"
             )
-        
+
         # Create batch tracking record
         batch_id = str(uuid.uuid4())
         batch = IngestionBatch(
-            batch_id=batch_id,
-            folder_path=str(folder_path),
+            request_id=batch_id,
             status='pending',
             total_files=stats['total_files'],
             processed_files=0,
-            owner=request.owner,
-            user_comment=request.user_comment,
+            failed_files=0,
+            batch_metadata={
+                'folder_path': str(folder_path),
+                'owner': request.owner,
+                'user_comment': request.user_comment
+            },
             created_at=datetime.utcnow()
         )
-        
+
         try:
             db.add(batch)
             db.commit()
@@ -1040,7 +1006,7 @@ def ingest_folder(
                 status_code=500,
                 detail=f"Failed to create batch: {str(e)}"
             ) from e
-        
+
         # TODO: Queue background task to process files
         # For now, we just return the batch info
         # In production, this would trigger a background worker
@@ -1048,7 +1014,7 @@ def ingest_folder(
             f"Created folder ingestion batch {batch_id}: "
             f"{stats['total_files']} files from {folder_path}"
         )
-        
+
         return {
             "batch_id": batch_id,
             "status": "accepted",
@@ -1056,7 +1022,7 @@ def ingest_folder(
             "status_url": f"/api/v1/ingest/batch/{batch_id}",
             "stats": stats
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1068,21 +1034,21 @@ def ingest_folder(
         ) from e
 
 
-@router.get("/api/v1/ingest/batch/{batch_id}")
+@router.get("/ingest/batch/{batch_id}")
 def get_batch_status(batch_id: str, db: Session = Depends(get_db)):
     """
     Get folder ingestion batch progress.
-    
+
     Returns detailed progress information including:
     - Current status (pending, processing, completed, failed)
     - File counts (total, processed)
     - Progress percentage
     - Timestamps
     - Error information (if any)
-    
+
     **Path Parameters:**
     - **batch_id**: UUID of the batch to check
-    
+
     **Example Response:**
     ```json
     {
@@ -1099,16 +1065,16 @@ def get_batch_status(batch_id: str, db: Session = Depends(get_db)):
     }
     ```
     """
-    batch = db.query(IngestionBatch).filter_by(batch_id=batch_id).first()
-    
+    batch = db.query(IngestionBatch).filter_by(request_id=batch_id).first()
+
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
-    
+
     # Calculate progress percentage
     progress_pct = 0.0
     if batch.total_files > 0:
         progress_pct = (batch.processed_files / batch.total_files) * 100
-    
+
     return {
         "batch_id": batch.batch_id,
         "status": batch.status,
@@ -1116,18 +1082,18 @@ def get_batch_status(batch_id: str, db: Session = Depends(get_db)):
         "total_files": batch.total_files,
         "processed_files": batch.processed_files,
         "progress_percent": round(progress_pct, 2),
-        "failed_files": batch.failed_files or [],
+        "failed_files": batch.failed_files,
         "owner": batch.owner,
-        "user_comment": batch.user_comment,
+        "user_comment": batch.batch_metadata.get('user_comment') if batch.batch_metadata else None,
         "created_at": batch.created_at.isoformat(),
         "updated_at": batch.updated_at.isoformat(),
-        "started_at": batch.started_at.isoformat() if batch.started_at else None,
+        "started_at": None,
         "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
         "error_message": batch.error_message
     }
 
 
-@router.get("/api/v1/ingest/batches")
+@router.get("/ingest/batches")
 def list_batches(
     status: Optional[str] = Query(None, description="Filter by status"),
     owner: Optional[str] = Query(None, description="Filter by owner"),
@@ -1136,17 +1102,17 @@ def list_batches(
 ):
     """
     List folder ingestion batches with optional filtering.
-    
+
     **Query Parameters:**
     - **status**: Filter by status (pending, processing, completed, failed)
     - **owner**: Filter by owner
     - **limit**: Max results (default: 20, max: 100)
-    
+
     **Returns:**
     List of batch summaries ordered by creation time (newest first).
     """
     query = db.query(IngestionBatch)
-    
+
     if status:
         if status not in ['pending', 'processing', 'completed', 'failed']:
             raise HTTPException(
@@ -1154,18 +1120,25 @@ def list_batches(
                 detail="Invalid status. Must be one of: pending, processing, completed, failed"
             )
         query = query.filter(IngestionBatch.status == status)
-    
+
     if owner:
-        query = query.filter(IngestionBatch.owner == owner)
-    
-    batches = query.order_by(IngestionBatch.created_at.desc()).limit(limit).all()
-    
+        # Note: owner is stored in metadata JSONB, filtering would require JSONB query
+        # For simplicity, we'll filter in Python after query
+        pass
+
+    batches = query.order_by(
+        IngestionBatch.created_at.desc()).limit(limit).all()
+
     results = []
     for batch in batches:
+        # Filter by owner if specified (post-query filtering)
+        if owner and batch.owner != owner:
+            continue
+
         progress_pct = 0.0
         if batch.total_files > 0:
             progress_pct = (batch.processed_files / batch.total_files) * 100
-        
+
         results.append({
             "batch_id": batch.batch_id,
             "status": batch.status,
@@ -1177,7 +1150,7 @@ def list_batches(
             "created_at": batch.created_at.isoformat(),
             "updated_at": batch.updated_at.isoformat()
         })
-    
+
     return {
         "batches": results,
         "count": len(results)
