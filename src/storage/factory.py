@@ -28,7 +28,7 @@ def get_storage_adapter() -> StorageAdapter:
     if _storage_instance is None:
         settings = get_settings()
         # Use filesystem storage
-            _storage_instance = FilesystemStorage(base_path=settings.storage_path)
+        _storage_instance = FilesystemStorage(base_path=settings.storage_path)
     
     return _storage_instance
 

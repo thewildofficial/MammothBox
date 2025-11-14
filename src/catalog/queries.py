@@ -415,6 +415,11 @@ class QueryProcessor:
             media_response = self.search(db, normalized_query, filters)
             combined_results.extend(media_response.results)
 
+        # JSON assets should reuse the media search path to ensure parity
+        if filters.asset_type == "json":
+            media_response = self.search(db, normalized_query, filters)
+            combined_results.extend(media_response.results)
+
         # Document chunk search
         if filters.asset_type in (None, "document"):
             doc_embedding = self.encode_document_query(normalized_query)
@@ -430,6 +435,14 @@ class QueryProcessor:
 
             if filters.owner:
                 chunk_query = chunk_query.filter(Asset.owner == filters.owner)
+
+            if filters.cluster_id:
+                chunk_query = chunk_query.filter(
+                    Asset.cluster_id == filters.cluster_id
+                )
+
+            if filters.tags:
+                chunk_query = chunk_query.filter(Asset.tags.overlap(filters.tags))
 
             max_distance = 2 * (1 - filters.min_similarity)
             chunk_query = chunk_query.filter(
