@@ -2,7 +2,7 @@
 
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     api_key: str = ""
     allowed_origins: List[str] = [
         "http://localhost:3000", "http://localhost:8000"]
+    ingest_allowed_root: Optional[str] = None  # Optional root directory for folder ingestion (None = no restriction)
 
     # Observability
     metrics_enabled: bool = True

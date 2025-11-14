@@ -12,6 +12,20 @@ A smart storage system with a unified frontend interface that intelligently proc
   - Multi-filter support (type, owner, cluster, tags, threshold)
   - Query timing and performance metrics
   - 28 comprehensive unit tests
+- **Database Optimizations** (NEW ✅): Enhanced performance and monitoring
+  - Connection pooling with QueuePool (10 base + 20 overflow)
+  - Strategic GIN and composite indexes for sub-150ms queries
+  - Automatic query timing and slow query warnings
+- **OCR Text Detection** (NEW ✅): Searchable text extraction from images
+  - Two-stage heuristic (edge density + OCR validation)
+  - Tesseract-based text extraction with bounding boxes
+  - Hybrid search combining vector similarity and keyword matching
+  - Automatic detection of screenshots, diagrams, and memes
+- **Recursive Folder Ingestion** (NEW ✅): Bulk import entire directory trees
+  - Batch processing with progress tracking
+  - `.allocatorignore` support (gitignore-style)
+  - RESTful API for batch status monitoring
+  - Support for images, videos, documents, and JSON
 - **Human-in-the-Loop**: Provisional schema proposals and cluster assignments require admin approval
 - **Audit Trail**: Complete lineage tracking for all ingested assets
 
@@ -31,6 +45,8 @@ This is a monolithic backend application with clear modular boundaries, designed
 
 See [docs/mvp_backend_design.md](docs/mvp_backend_design.md) for detailed architecture documentation.
 
+**New Features:** See [docs/NEW_FEATURES.md](docs/NEW_FEATURES.md) for database optimizations, OCR text detection, and recursive folder ingestion.
+
 ## Quick Start
 
 ### Prerequisites
@@ -39,6 +55,7 @@ See [docs/mvp_backend_design.md](docs/mvp_backend_design.md) for detailed archit
 - PostgreSQL 14+ with pgvector extension
 - Docker & Docker Compose (recommended)
 - ffmpeg (for video processing)
+- Tesseract OCR (for text detection in images)
 
 ### Local Development Setup
 
@@ -59,19 +76,35 @@ cp .env.example .env
 # Edit .env with your database credentials and storage paths
 ```
 
-3. **Start PostgreSQL with pgvector:**
+3. **Install system dependencies:**
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install tesseract-ocr ffmpeg
+```
+
+**macOS:**
+```bash
+brew install tesseract ffmpeg
+```
+
+**Windows:**
+- Install Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
+- Install ffmpeg from: https://ffmpeg.org/download.html
+
+4. **Start PostgreSQL with pgvector:**
 
 ```bash
 docker-compose up -d postgres
 ```
 
-4. **Run migrations:**
+5. **Run migrations:**
 
 ```bash
 python scripts/migrate.py
 ```
 
-5. **Start the application:**
+6. **Start the application:**
 
 ```bash
 python -m src.main

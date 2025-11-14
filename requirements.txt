@@ -17,6 +17,7 @@ Pillow==10.4.0
 opencv-python-headless==4.10.0.84
 imagehash==4.3.1
 ffmpeg-python==0.2.0
+pytesseract==0.3.13  # OCR for text detection in images
 
 ## ML/Embeddings (CPU-friendly)
 sentence-transformers==3.3.1
