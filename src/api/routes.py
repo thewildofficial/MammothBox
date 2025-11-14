@@ -939,7 +939,7 @@ class FolderIngestRequest(BaseModel):
 
 
 @router.post("/api/v1/ingest/folder", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_folder(
+def ingest_folder(
     request: FolderIngestRequest,
     db: Session = Depends(get_db)
 ):
@@ -949,8 +949,12 @@ async def ingest_folder(
     Returns 202 Accepted immediately with batch_id for tracking progress.
     Files are processed asynchronously in the background.
     
+    **Security Note:** This endpoint validates folder paths against configured
+    allowed roots to prevent arbitrary path access. Only paths under the
+    configured ingest root are permitted.
+    
     **Request Body:**
-    - **folder_path** (required): Absolute path to folder to ingest
+    - **folder_path** (required): Absolute path to folder to ingest (must be under allowed root)
     - **owner**: Optional owner identifier for all ingested assets
     - **user_comment**: Optional comment/description for the batch
     
@@ -971,12 +975,27 @@ async def ingest_folder(
     """
     from pathlib import Path
     from src.ingest.folder_scanner import FolderScanner
+    from src.config.settings import get_settings
     import uuid
-    from datetime import datetime
+    
+    settings = get_settings()
     
     try:
         # Validate folder path
         folder_path = Path(request.folder_path).resolve()
+        
+        # Security: Constrain folder paths to allowed roots
+        # If ingest_allowed_root is configured, enforce it
+        if hasattr(settings, 'ingest_allowed_root') and settings.ingest_allowed_root:
+            allowed_root = Path(settings.ingest_allowed_root).resolve()
+            try:
+                folder_path.relative_to(allowed_root)
+            except ValueError:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Folder path must be under allowed root: {allowed_root}"
+                )
+        
         if not folder_path.exists():
             raise HTTPException(status_code=404, detail=f"Folder not found: {request.folder_path}")
         
@@ -986,9 +1005,11 @@ async def ingest_folder(
         # Quick scan to get file count
         scanner = FolderScanner()
         try:
-            files, stats = scanner.scan_folder_with_stats(str(folder_path))
+            _files, stats = scanner.scan_folder_with_stats(str(folder_path))
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to scan folder: {str(e)}")
+            logger.exception("Failed to scan folder")
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f"Failed to scan folder: {str(e)}") from e
         
         if stats['total_files'] == 0:
             raise HTTPException(
@@ -1008,8 +1029,17 @@ async def ingest_folder(
             user_comment=request.user_comment,
             created_at=datetime.utcnow()
         )
-        db.add(batch)
-        db.commit()
+        
+        try:
+            db.add(batch)
+            db.commit()
+        except Exception as e:
+            logger.exception("Failed to create batch record")
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create batch: {str(e)}"
+            ) from e
         
         # TODO: Queue background task to process files
         # For now, we just return the batch info
@@ -1030,11 +1060,12 @@ async def ingest_folder(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Folder ingestion error: {e}", exc_info=True)
+        logger.exception("Folder ingestion error")
+        db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to start folder ingestion: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/api/v1/ingest/batch/{batch_id}")

@@ -90,10 +90,21 @@ class OCRProcessor:
         
         for i, word in enumerate(ocr_data['text']):
             word_stripped = word.strip()
-            confidence = ocr_data['conf'][i]
             
             # Skip empty words
             if not word_stripped:
+                continue
+            
+            # Parse confidence value (pytesseract returns strings)
+            try:
+                confidence_raw = ocr_data['conf'][i]
+                # Handle string or numeric confidence values
+                if isinstance(confidence_raw, str):
+                    confidence = float(confidence_raw) if confidence_raw.strip() else -1.0
+                else:
+                    confidence = float(confidence_raw)
+            except (ValueError, TypeError):
+                # Skip invalid confidence values
                 continue
             
             # Handle negative confidence: Tesseract returns -1 for unreliable detections

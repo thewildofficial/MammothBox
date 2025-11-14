@@ -7,7 +7,8 @@ import pytest
 pytest.skip(
     "Folder ingestion route tests require importing FastAPI routes which depend "
     "on SQLAlchemy models conflicting with the reserved 'metadata' attribute "
-    "under SQLAlchemy 2.x in this environment.",
+    "under SQLAlchemy 2.x in this environment. "
+    "See issue #33 for tracking and resolution.",
     allow_module_level=True,
 )
 

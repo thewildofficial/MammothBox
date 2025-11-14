@@ -90,15 +90,33 @@ class TextInImageDetector:
                 config='--psm 6'  # Assume uniform text block
             )
             
-            # Filter confident words
-            confident_words = [
-                word for word, conf in zip(ocr_data['text'], ocr_data['conf'])
-                if conf > self.ocr_confidence_threshold and word.strip()
-            ]
+            # Parse confidence values (pytesseract returns strings)
+            confidences_float = []
+            confident_words = []
             
-            # Calculate average confidence
-            confidences = [c for c in ocr_data['conf'] if c > 0]
-            avg_confidence = float(np.mean(confidences)) if confidences else 0.0
+            for word, conf_raw in zip(ocr_data['text'], ocr_data['conf']):
+                if not word.strip():
+                    continue
+                
+                try:
+                    # Convert string confidence to float
+                    if isinstance(conf_raw, str):
+                        conf_float = float(conf_raw) if conf_raw.strip() else -1.0
+                    else:
+                        conf_float = float(conf_raw)
+                except (ValueError, TypeError):
+                    # Skip invalid confidence values
+                    continue
+                
+                # Include in average calculation (treat negative as 0)
+                confidences_float.append(max(0.0, conf_float))
+                
+                # Filter confident words
+                if conf_float > self.ocr_confidence_threshold:
+                    confident_words.append(word.strip())
+            
+            # Calculate average confidence from valid float values
+            avg_confidence = float(np.mean(confidences_float)) if confidences_float else 0.0
             
             has_text = len(confident_words) >= self.min_word_count
             

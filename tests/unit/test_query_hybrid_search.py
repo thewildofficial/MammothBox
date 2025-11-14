@@ -6,7 +6,8 @@ import pytest
 
 pytest.skip(
     "Hybrid search tests require full SQLAlchemy model import which conflicts "
-    "with reserved 'metadata' attribute under SQLAlchemy 2.x in this environment.",
+    "with reserved 'metadata' attribute under SQLAlchemy 2.x in this environment. "
+    "See issue #33 for tracking and resolution.",
     allow_module_level=True,
 )
 

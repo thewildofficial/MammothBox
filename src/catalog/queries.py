@@ -461,6 +461,9 @@ class QueryProcessor:
         Returns:
             SearchResponse with hybrid-ranked results
         """
+        import time
+        start_time = time.perf_counter()
+        
         try:
             # Stage 1: Vector similarity search
             vector_response = self.search(db, query, filters)
@@ -544,11 +547,14 @@ class QueryProcessor:
                 reverse=True
             )[:filters.limit]
             
+            # Calculate total hybrid search time (not just vector search)
+            total_time_ms = (time.perf_counter() - start_time) * 1000
+            
             return SearchResponse(
                 query=query,
                 results=sorted_results,
                 total=len(sorted_results),
-                query_time_ms=vector_response.query_time_ms,
+                query_time_ms=round(total_time_ms, 2),
                 filters_applied=filters.__dict__
             )
             
