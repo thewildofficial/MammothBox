@@ -90,3 +90,5 @@ Sometimes jobs fail permanently (like corrupted files). Instead of losing them:
   - Each retry waits longer (exponential backoff: 1s, 2s, 4s)
 
 
+
+

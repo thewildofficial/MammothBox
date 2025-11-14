@@ -1,6 +1,6 @@
 # Configuration management
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings  # type: ignore
 from functools import lru_cache
 from typing import List, Optional
 
@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     cluster_threshold: float = 0.72  # Default threshold per spec
     max_image_size: int = 1024
     video_keyframes: int = 3
+
+    # Document Processing
+    text_embedding_model: str = "sentence-transformers/all-mpnet-base-v2"
+    doc_chunk_size: int = 512
+    doc_chunk_overlap: int = 50
 
     # VLM Configuration (Gemini)
     gemini_api_key: str = ""

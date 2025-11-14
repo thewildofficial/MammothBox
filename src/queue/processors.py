@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from src.queue.supervisor import JobProcessor
 from src.ingest.json_processor import JsonProcessor, JsonProcessingError
+from src.catalog.models import Asset
+from src.documents.service import DocumentService, DocumentServiceError
 from src.media.service import MediaService, MediaServiceError
 from src.storage.factory import get_storage_adapter
 
@@ -154,24 +156,24 @@ class MediaJobProcessor(JobProcessor):
             if not request_id:
                 raise ValueError("No request_id provided in job data")
             
-            # Get storage adapter
             storage = get_storage_adapter()
+            media_service = MediaService(db, storage)
+            document_service = DocumentService(db, storage)
             
-            # Create media service
-            service = MediaService(db, storage)
-            
-            # Process each asset
             results = []
             for asset_id_str in asset_ids:
                 try:
                     asset_id = UUID(asset_id_str)
-                    result = service.process_asset(asset_id, request_id)
+                    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+                    if asset and asset.kind == "document":
+                        result = document_service.process_asset(asset_id, request_id)
+                    else:
+                        result = media_service.process_asset(asset_id, request_id)
                     results.append(result)
                     logger.info(
-                        f"Processed asset {asset_id} for request {request_id}. "
-                        f"Cluster: {result.get('cluster_id')}"
+                        f"Processed asset {asset_id} for request {request_id}."
                     )
-                except Exception as e:
+                except (MediaServiceError, DocumentServiceError) as e:
                     logger.error(f"Failed to process asset {asset_id_str}: {e}", exc_info=True)
                     results.append({
                         "success": False,
@@ -206,8 +208,8 @@ class MediaJobProcessor(JobProcessor):
                 "total_count": len(results)
             }
             
-        except MediaServiceError as e:
-            logger.error(f"Media processing error: {e}")
+        except (MediaServiceError, DocumentServiceError) as e:
+            logger.error(f"Asset processing error: {e}")
             raise
         except Exception as e:
             logger.error(f"Unexpected error processing media job: {e}", exc_info=True)
