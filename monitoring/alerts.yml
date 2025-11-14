@@ -1,0 +1,115 @@
+# Prometheus alerting rules for File Allocator
+
+groups:
+  - name: file_allocator_alerts
+    interval: 30s
+    rules:
+      # Dead Letter Queue alerts
+      - alert: DeadLetterQueueDepthHigh
+        expr: dead_letter_queue_depth > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: queue
+        annotations:
+          summary: "Dead letter queue depth is high"
+          description: "DLQ has {{ $value }} failed jobs for {{ $labels.job_type }}"
+
+      # Job processing latency alerts
+      - alert: JobProcessingLatencyHigh
+        expr: histogram_quantile(0.95, rate(job_processing_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: workers
+        annotations:
+          summary: "Job processing latency is high"
+          description: "P95 job processing latency is {{ $value }}s for {{ $labels.job_type }}"
+
+      # Search latency alerts
+      - alert: SearchLatencyHigh
+        expr: histogram_quantile(0.95, rate(search_latency_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+        annotations:
+          summary: "Search latency is high"
+          description: "P95 search latency is {{ $value }}s for {{ $labels.search_type }}"
+
+      # Database connection pool alerts
+      - alert: DatabaseConnectionPoolExhausted
+        expr: database_connections{state="active"} / (database_connections{state="active"} + database_connections{state="idle"}) > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool utilization is {{ $value | humanizePercentage }}"
+
+      # Worker crash rate alerts
+      - alert: WorkerCrashRateHigh
+        expr: rate(jobs_processed_total{status="failure"}[1h]) / rate(jobs_processed_total[1h]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: workers
+        annotations:
+          summary: "Worker crash rate is high"
+          description: "Worker failure rate is {{ $value | humanizePercentage }} for {{ $labels.job_type }}"
+
+      # VLM API failure rate alerts
+      - alert: VLMAPIFailureRateHigh
+        expr: rate(jobs_processed_total{job_type="media",status="failure"}[5m]) / rate(jobs_processed_total{job_type="media"}[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: vlm
+        annotations:
+          summary: "VLM API failure rate is high"
+          description: "VLM failure rate is {{ $value | humanizePercentage }}"
+
+      # Queue depth alerts
+      - alert: QueueDepthHigh
+        expr: queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: queue
+        annotations:
+          summary: "Job queue depth is high"
+          description: "Queue has {{ $value }} pending jobs for {{ $labels.job_type }}"
+
+      # Application health alerts
+      - alert: ApplicationDown
+        expr: up{job="file-allocator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: app
+        annotations:
+          summary: "Application is down"
+          description: "File Allocator application is not responding"
+
+      # Ingest request failure rate
+      - alert: IngestFailureRateHigh
+        expr: rate(ingest_requests_total{status="failure"}[5m]) / rate(ingest_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: ingest
+        annotations:
+          summary: "Ingest failure rate is high"
+          description: "Ingest failure rate is {{ $value | humanizePercentage }} for {{ $labels.request_type }}"
+
+      # Memory usage alerts
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes > 2e9 # 2GB
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Application memory usage is high"
+          description: "Memory usage is {{ $value | humanize }}B"
