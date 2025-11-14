@@ -19,10 +19,10 @@ from src.catalog.models import Asset
 from src.catalog.queries import QueryProcessor, SearchFilter, SearchResult, SearchResponse
 
 
-def _make_asset(ocr_text: str | None) -> Asset:
+def _make_asset(ocr_text: str | None, asset_id: UUID | None = None) -> Asset:
     """Create an Asset instance suitable for testing."""
     return Asset(
-        id=uuid4(),
+        id=asset_id or uuid4(),
         kind="media",
         uri="fs://example",
         size_bytes=1234,
@@ -53,8 +53,10 @@ def test_search_with_ocr_boosts_text_matches(mock_search):
     processor = QueryProcessor()
     filters = SearchFilter(limit=5)
 
+    # Use a fixed UUID for both vector result and OCR asset to test boost path
+    test_asset_id = uuid4()
     base_result = SearchResult(
-        asset_id="vector-asset",
+        asset_id=str(test_asset_id),
         kind="media",
         uri="fs://vector",
         content_type="image/png",
@@ -77,13 +79,17 @@ def test_search_with_ocr_boosts_text_matches(mock_search):
         filters_applied={},
     )
 
-    matching_asset = _make_asset("Quarterly earnings report available now")
+    # Create OCR asset with same ID as vector result to test boost path
+    matching_asset = _make_asset(
+        "Quarterly earnings report available now",
+        asset_id=test_asset_id
+    )
     db, query_mock, limit_mock = _setup_db_mock([matching_asset])
 
     response = processor.search_with_ocr(db, "earnings report", filters)
 
     assert response.total == 1
-    assert response.results[0].asset_id == "vector-asset"
+    assert response.results[0].asset_id == str(test_asset_id)
     assert response.results[0].similarity_score > base_result.similarity_score
     limit_mock.all.assert_called_once()
     query_mock.filter.assert_called()

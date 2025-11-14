@@ -7,7 +7,7 @@ text positioning information.
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 from PIL import Image
@@ -119,13 +119,29 @@ class OCRProcessor:
             if confidence >= self.confidence_threshold:
                 confident_words.append(word_stripped)
                 
+                # Validate bounding box fields exist, are numeric, and index is valid
+                try:
+                    if ('left' not in ocr_data or 'top' not in ocr_data or 
+                        'width' not in ocr_data or 'height' not in ocr_data):
+                        continue
+                    if (i >= len(ocr_data['left']) or i >= len(ocr_data['top']) or
+                        i >= len(ocr_data['width']) or i >= len(ocr_data['height'])):
+                        continue
+                    x = int(ocr_data['left'][i])
+                    y = int(ocr_data['top'][i])
+                    width = int(ocr_data['width'][i])
+                    height = int(ocr_data['height'][i])
+                except (ValueError, TypeError, KeyError, IndexError):
+                    # Skip invalid bounding box data
+                    continue
+                
                 # Create bounding box
                 bbox = BoundingBox(
                     word=word_stripped,
-                    x=ocr_data['left'][i],
-                    y=ocr_data['top'][i],
-                    width=ocr_data['width'][i],
-                    height=ocr_data['height'][i],
+                    x=x,
+                    y=y,
+                    width=width,
+                    height=height,
                     confidence=float(confidence)
                 )
                 bounding_boxes.append(bbox)

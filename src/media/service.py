@@ -91,6 +91,7 @@ class MediaService:
             processed_data = None
             embedding = None
             frame_embeddings = []
+            ocr_result = None  # Initialize before content-type switch to avoid UnboundLocalError
 
             if content_type.startswith('image/'):
                 processed_data = self.processor.process_image(
@@ -113,7 +114,6 @@ class MediaService:
                         logger.error(f"Unexpected VLM error: {e}")
                 
                 # Stage 2.6: OCR Text Detection (if image contains text)
-                ocr_result = None
                 text_detector = self.processor._get_text_detector()
                 ocr_processor = self.processor._get_ocr_processor()
                 
