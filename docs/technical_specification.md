@@ -100,11 +100,6 @@ Design a smart storage system with a single frontend interface that intelligentl
 - **unstructured 0.12.x**: Multi-format document parsing (PDF, EPUB, PPTX, DOCX, HTML)
 - **rapidfuzz 3.6.x**: Fuzzy matching for de-duplication and content linking
 
-### Vision Language Model (VLM)
-- **google-generativeai**: Google Generative AI SDK for Gemini API
-- **Model**: `gemini-2.5-flash` or `gemini-2.5-flash-lite` (for image analysis and metadata extraction)
-- **Purpose**: Dynamic tag generation, scene understanding, and rich metadata extraction
-
 ### Media Processing
 - **Pillow 10.1.0**: Image processing and normalization
 - **opencv-python-headless 4.8.1.78**: Video processing and keyframe extraction
@@ -490,7 +485,7 @@ curl http://localhost:8000/api/v1/objects/asset-uuid-1
     "detected_objects": ["cat", "carpet", "window"],
     "scene_type": "portrait",
     "color_palette": ["black", "brown", "yellow", "beige"],
-    "vlm_model": "gemini-2.5-flash"
+    "vlm_model": "blip2+phi3.5"
   }
 }
 ```
@@ -825,7 +820,7 @@ The media processing pipeline handles images, videos, and audio files. It perfor
    - Use `ffmpeg` scene detection (`-vf "select='gt(scene,0.3)'"`)
 2. Generate thumbnail from first keyframe
 3. Extract metadata (resolution, codec, bitrate, duration)
-4. **VLM Analysis**: Analyze keyframes with Gemini (if enabled)
+4. **VLM Analysis**: Analyze keyframes with BLIP-2 + Phi-3.5 (if enabled)
    - Analyze each keyframe separately
    - Aggregate tags and metadata across keyframes
    - Use most representative keyframe for cluster naming
@@ -912,147 +907,37 @@ text_embedding = model.encode(
 #### Stage 4: VLM-Based Metadata Extraction & Tag Generation
 **Module:** `src/media/vlm_analyzer.py`
 
-**Purpose:** Use Gemini 2.5 Flash to analyze images and extract rich, contextual metadata without predefined categories.
+**Purpose:** Use local BLIP-2 + Phi-3.5-mini pipeline to analyze images and extract rich, contextual metadata without external APIs.
+
+**Architecture:**
+Due to security constraints and local processing requirements, we use a multi-stage local pipeline:
+1. **BLIP-2** generates natural language image captions
+2. **Phi-3.5-mini** extracts structured metadata from captions
+3. **CLIP** generates embeddings for clustering (unchanged)
 
 **Process:**
 1. **Prepare Image:**
    - Use normalized image from Stage 2 (max 1024px)
-   - Convert to base64 or PIL Image format for API
+   - Convert to RGB PIL Image format
 
-2. **Call Gemini 2.5 Flash API:**
-   - Model: `gemini-2.5-flash` or `gemini-2.5-flash-lite`
-   - Use structured output with JSON schema
-   - Request comprehensive image analysis
+2. **Generate Caption with BLIP-2:**
+   - Send image to local BLIP-2 service (FastAPI endpoint)
+   - Model: `Salesforce/blip2-opt-2.7b` (~1.5GB VRAM)
+   - Generates detailed natural language description
+   - Runs on GPU when available, falls back to CPU
+   - Performance: ~2-3s per image on GPU, ~5-10s on CPU
 
-3. **Extract Structured Metadata:**
-   - Parse JSON response from VLM
-   - Extract tags, categories, descriptions, and metadata
+3. **Extract Structured Metadata with Phi-3.5:**
+   - Send BLIP caption to Phi-3.5-mini service (vLLM endpoint)
+   - Model: `microsoft/Phi-3.5-mini-instruct` (3.8B params, ~2.5GB VRAM)
+   - Uses structured prompting to extract JSON metadata
+   - 128K context allows processing multiple images for batch analysis
+   - Performance: ~50-100 tokens/s on GPU, ~10-20 tokens/s on CPU
 
 4. **Fallback Strategy:**
-   - If API fails or times out: fall back to CLIP zero-shot with basic categories
-   - Log fallback for monitoring
-
-**VLM Prompt Design:**
-```python
-PROMPT_TEMPLATE = """
-Analyze this image and provide structured metadata in JSON format.
-
-Extract the following information:
-1. **Primary Category**: The main subject/category (e.g., "animals", "vehicles", "food", "nature", "people", "architecture", "technology", "art", "sports", "fashion", etc.)
-
-2. **Tags**: Array of 5-15 descriptive tags covering:
-   - Main subjects/objects (e.g., "cat", "mountain", "car")
-   - Scene/context (e.g., "outdoor", "indoor", "sunset", "beach")
-   - Activities/actions (e.g., "running", "cooking", "playing")
-   - Attributes (e.g., "red", "vintage", "modern", "close-up")
-   - Mood/atmosphere (e.g., "peaceful", "energetic", "dramatic")
-
-3. **Description**: A concise 1-2 sentence description of the image
-
-4. **Detected Objects**: Array of specific objects found (with confidence)
-
-5. **Scene Type**: Type of scene (e.g., "portrait", "landscape", "still life", "action", "abstract")
-
-6. **Color Palette**: Dominant colors (3-5 colors)
-
-7. **Suggested Cluster Name**: A human-readable name for grouping similar images (e.g., "Golden Retrievers", "Mountain Landscapes", "Red Sports Cars")
-
-Return ONLY valid JSON in this exact structure:
-{{
-    "primary_category": "string",
-    "tags": ["tag1", "tag2", ...],
-    "description": "string",
-    "detected_objects": ["object1", "object2", ...],
-    "scene_type": "string",
-    "color_palette": ["color1", "color2", ...],
-    "suggested_cluster_name": "string"
-}}
-"""
-
-# Use Gemini's structured output feature
-response = model.generate_content(
-    [PROMPT_TEMPLATE, image],
-    generation_config={
-        "response_mime_type": "application/json",
-        "response_schema": {
-            "type": "object",
-            "properties": {
-                "primary_category": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "description": {"type": "string"},
-                "detected_objects": {"type": "array", "items": {"type": "string"}},
-                "scene_type": {"type": "string"},
-                "color_palette": {"type": "array", "items": {"type": "string"}},
-                "suggested_cluster_name": {"type": "string"}
-            },
-            "required": ["primary_category", "tags", "description", "suggested_cluster_name"]
-        }
-    }
-)
-```
-
-**Output Structure:**
-```python
-{
-    "primary_category": "animals",
-    "tags": ["cat", "black cat", "indoor", "pet", "feline", "close-up", "yellow eyes", "domestic cat"],
-    "description": "A close-up portrait of a sleek black domestic cat with striking yellow eyes, photographed indoors.",
-    "detected_objects": ["cat", "carpet", "window"],
-    "scene_type": "portrait",
-    "color_palette": ["black", "brown", "yellow", "beige"],
-    "suggested_cluster_name": "Black Cats"
-}
-```
-
-**Storage:**
-- `tags`: Stored in `asset.tags` array (used for filtering and search)
-- `primary_category`: Stored in `asset.metadata->>'primary_category'`
-- `description`: Stored in `asset.metadata->>'description'`
-- `detected_objects`: Stored in `asset.metadata->>'detected_objects'`
-- `scene_type`: Stored in `asset.metadata->>'scene_type'`
-- `color_palette`: Stored in `asset.metadata->>'color_palette'`
-- `suggested_cluster_name`: Used for cluster naming (Stage 6)
-
-**Performance Targets:**
-- VLM API call: < 2s per image (Gemini Flash is fast)
-- Fallback to CLIP: < 500ms per image
-- Batch processing: Sequential (API rate limits apply)
-
-**Technology:**
-- `google-generativeai`: Google Generative AI SDK
-- `Pillow`: Image preprocessing
-- `httpx`: HTTP client for API calls (if not using SDK)
-
-**Code Example:**
-```python
-import google.generativeai as genai
-from PIL import Image
-import json
-
-# Initialize Gemini client
-genai.configure(api_key=settings.gemini_api_key)
-model = genai.GenerativeModel('gemini-2.5-flash')
-def analyze_image_vlm(image: Image.Image) -> dict:
-    """Analyze image using Gemini VLM and return structured metadata."""
-    try:
-        # Prepare prompt
-        prompt = PROMPT_TEMPLATE
-        
-        # Call API with structured output
-        response = model.generate_content(
-            [prompt, image],
-            generation_config={
-                "response_mime_type": "application/json",
-                "temperature": 0.3,  # Lower temperature for more consistent output
-            }
-        )
-        
-        # Parse JSON response
-        metadata = json.loads(response.text)
-        
-        # Validate and normalize
-        tags = metadata.get("tags", [])
-        if not tags:
+   - If BLIP service unavailable: fall back to CLIP zero-shot with basic categories
+   - If Phi-3.5 service unavailable: use simple rule-based extraction
+   - Log all fallbacks for monitoring
             tags = [metadata.get("primary_category", "unknown")]
         
         return {
@@ -1063,7 +948,7 @@ def analyze_image_vlm(image: Image.Image) -> dict:
             "scene_type": metadata.get("scene_type", ""),
             "color_palette": metadata.get("color_palette", []),
             "suggested_cluster_name": metadata.get("suggested_cluster_name", "Uncategorized"),
-            "vlm_model": "gemini-2.5-flash"
+            "vlm_model": "blip2+phi3.5"
         }
     except Exception as e:
         # Fallback to CLIP zero-shot
@@ -1247,7 +1132,7 @@ Raw File Bytes
     └─→ (Videos: Mean-pool keyframe embeddings)
     ↓
 [VLM Metadata Extraction]
-    ├─→ Gemini 2.5 Flash API → structured metadata
+    ├─→ BLIP-2 + Phi-3.5 Services → structured metadata
     ├─→ Extract tags, categories, description
     └─→ Fallback to CLIP if API fails
     ↓
@@ -2275,12 +2160,25 @@ AUDIO_SEGMENT_SECONDS=30
 AUDIO_SPEECH_CONFIDENCE=0.55
 AUDIO_SPECTROGRAM_IMAGE_SIZE=512
 
-# VLM Configuration
-GEMINI_API_KEY=  # Required for VLM analysis
-GEMINI_MODEL=gemini-2.5-flash  # or gemini-2.5-flash-lite
+# VLM Configuration (Local Multi-Model Architecture)
+# Note: No external APIs - all models run locally due to security constraints
+BLIP_ENDPOINT=http://blip-server:8001  # BLIP-2 image captioning service
+WHISPER_ENDPOINT=http://whisper-server:8002  # Whisper audio transcription service
+PHI35_ENDPOINT=http://phi35-server:8003  # Phi-3.5-mini reasoning service
+
 VLM_ENABLED=true
-VLM_TIMEOUT=5  # seconds
-VLM_FALLBACK_TO_CLIP=true  # Use CLIP if VLM fails
+VLM_TIMEOUT=30  # seconds (increased for local inference)
+VLM_FALLBACK_TO_CLIP=true  # Use CLIP if local services fail
+
+# GPU Configuration
+USE_GPU=true  # Use GPU when available, fallback to CPU
+GPU_DEVICE=0  # CUDA device ID (0 for first GPU)
+GPU_MEMORY_FRACTION=0.9  # Max GPU memory utilization per service (0.0-1.0)
+CPU_THREADS=4  # Number of CPU threads for inference when GPU unavailable
+
+# Model Quantization
+MODEL_DTYPE=fp16  # fp16 (GPU default), fp8 (Phi-3.5), int8 (CPU optimization)
+USE_QUANTIZED_MODELS=false  # Set true for INT8 quantization (lower memory, slight quality loss)
 
 # Schema Decision
 SCHEMA_SAMPLE_SIZE=128
@@ -2293,8 +2191,9 @@ AUTO_MIGRATE=false
 KNOWLEDGE_TREE_ENABLED=true
 KNOWLEDGE_TREE_REFRESH_INTERVAL_MINUTES=10
 KNOWLEDGE_GUARDRAIL_THRESHOLD=0.72
-LLM_PROVIDER=gemini  # or openai, anthropic
-LLM_MODEL_NAME=gemini-2.5-flash
+LLM_PROVIDER=phi35  # Local Phi-3.5 (replaces external providers)
+LLM_MODEL_NAME=microsoft/Phi-3.5-mini-instruct
+LLM_ENDPOINT=http://phi35-server:8003  # Same endpoint as VLM reasoning
 
 # Security
 API_KEY=  # Optional
