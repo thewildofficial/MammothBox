@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get the Automated File Allocator running in 5 minutes (after one-time base image build).
+Get MammothBox running in 5 minutes (after one-time base image build).
 
 ## Prerequisites
 
@@ -8,40 +8,77 @@ Get the Automated File Allocator running in 5 minutes (after one-time base image
 - 4GB RAM minimum
 - Internet connection (for base image build)
 
-## First Time Setup
+## Docker Setup
+
+### First Time Setup (Complete)
+
+The backend uses a two-stage Docker setup for fast iteration:
+
+1. **Base image** (~30 min, one-time): Contains all dependencies, Python packages, and ML models
+2. **App image** (~3 sec): Contains only your code
 
 ```bash
-# Clone and navigate to project
-cd MammothBox
+# Navigate to backend
+cd backend
 
-# STEP 1: Build base image (ONE TIME, ~45 minutes)
-# This downloads all dependencies and the ML model
+# STEP 1: Build base image (ONE TIME ONLY - ~30 minutes)
 docker build -f Dockerfile.base -t mammothbox-base:latest .
 
-# Or use the script:
-# PowerShell: .\build-base.ps1
-# Bash: ./build-base.sh
+# STEP 2: Build and start all services (~3 seconds)
+docker-compose up -d --build
 
-# STEP 2: Build application (~5 seconds)
-docker-compose build
+# STEP 3: Run database migrations
+docker exec file_allocator_app python scripts/migrate.py
 
-# STEP 3: Start all services
-docker-compose up -d
-
-# Check if ready
-curl http://localhost:8000/ready
-# Response: {"status":"ready","database":"connected"}
+# Verify everything works
+curl http://localhost:8000/health
+# Response: {"status":"healthy"}
 ```
 
-## Subsequent Starts (After Base Image Built)
+### Daily Development Workflow
+
+After the base image is built once, development is fast:
 
 ```bash
-# For code changes, rebuild app (takes ~5 seconds)
-docker-compose build app
-docker-compose up -d
+cd backend
 
-# Or just restart if no code changes
-docker-compose up -d
+# Make code changes in src/
+# Then rebuild and restart (takes ~3 seconds)
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f app
+
+# Stop services
+docker-compose down
+```
+
+### When to Rebuild Base Image
+
+Only rebuild the base image when:
+
+- Adding new Python packages to `requirements.txt`
+- Upgrading system dependencies
+- Updating Python version
+
+```bash
+cd backend
+docker build -f Dockerfile.base -t mammothbox-base:latest .
+docker-compose up -d --build
+```
+
+## Frontend Setup
+
+```bash
+cd frontend/mammothbox
+
+# Install dependencies (if not already done)
+npm install
+
+# Start development server
+npm start
+
+# Open http://localhost:3000
 ```
 
 ## Test the API
